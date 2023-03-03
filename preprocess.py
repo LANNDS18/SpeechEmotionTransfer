@@ -3,6 +3,8 @@ import os
 import librosa
 import numpy as np
 
+from sklearn.preprocessing import StandardScaler
+
 
 def read_RAVDESS_from_dir(data_path='.', num_emotion=8):
     data = pd.DataFrame(columns=['Emotion', 'Emotion intensity', 'Gender', 'Path'])
@@ -170,18 +172,41 @@ def getMELspectrogram(audio, sample_rate):
     return mel_spec_db
 
 
-if __name__ == '__main__':
+def preprocess_spectrogram(X_train, X_test, X_val):
+    X_train = np.expand_dims(X_train, 1)
+    X_val = np.expand_dims(X_val, 1)
+    X_test = np.expand_dims(X_test, 1)
+
+    scaler = StandardScaler()
+
+    b, c, h, w = X_train.shape
+    X_train = np.reshape(X_train, newshape=(b, -1))
+    X_train = scaler.fit_transform(X_train)
+    X_train = np.reshape(X_train, newshape=(b, c, h, w))
+
+    b, c, h, w = X_test.shape
+    X_test = np.reshape(X_test, newshape=(b, -1))
+    X_test = scaler.transform(X_test)
+    X_test = np.reshape(X_test, newshape=(b, c, h, w))
+
+    b, c, h, w = X_val.shape
+    X_val = np.reshape(X_val, newshape=(b, -1))
+    X_val = scaler.transform(X_val)
+    X_val = np.reshape(X_val, newshape=(b, c, h, w))
+
+    return X_train, X_test, X_val
+
+
+def RAVDESS_Preprocess_Pipeline():
     SAMPLE_RATE = 48000
+    EMOTION = {1: 'neutral', 2: 'calm', 3: 'happy', 4: 'sad', 5: 'angry', 6: 'fear', 7: 'disgust', 0: 'surprise'}
 
     RAVDESS_data = read_RAVDESS_from_dir(data_path='./audio_speech_actors_01-24')
 
     signal = load_signal(RAVDESS_data, sample_rate=SAMPLE_RATE)
 
     X_train, X_val, X_test, Y_train, Y_val, Y_test = split_RAVDESS_data(RAVDESS_data, signal,
-                                                                        emotions={1: 'neutral', 2: 'calm', 3: 'happy',
-                                                                                  4: 'sad', 5: 'angry', 6: 'fear',
-                                                                                  7: 'disgust',
-                                                                                  0: 'surprise'})
+                                                                        emotions=EMOTION)
 
     # Data Argumentation
     aug_signals = []
@@ -241,3 +266,7 @@ if __name__ == '__main__':
     print(f'X_train:{X_train.shape}, Y_train:{Y_train.shape}')
     print(f'X_val:{X_val.shape}, Y_val:{Y_val.shape}')
     print(f'X_test:{X_test.shape}, Y_test:{Y_test.shape}')
+
+    X_train, X_test, X_val = preprocess_spectrogram(X_train, X_test=X_test, X_val=X_val)
+
+    return X_train, X_test, X_val, Y_train, Y_test, Y_val

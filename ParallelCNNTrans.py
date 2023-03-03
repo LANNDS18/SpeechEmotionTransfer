@@ -81,6 +81,3 @@ class ParallelModel(nn.Module):
         output_softmax = self.out_softmax(output_logits)
         return output_logits, output_softmax, complete_embedding
 
-
-model = ParallelModel(8)
-summary(model)
