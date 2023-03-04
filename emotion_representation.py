@@ -82,5 +82,12 @@ def generate_from_all():
     np.save('./models/RAVDESS_complete_embedding.npy', complete_embedding.cpu().numpy())
 
 
+def load_embedding():
+    RAVDESS_data = read_RAVDESS_from_dir('./audio_speech_actors_01-24')
+    complete_embedding = np.load('./models/RAVDESS_complete_embedding.npy')
+    return RAVDESS_data, complete_embedding
 
-generate_from_all()
+
+RAVDESS_data, complete_embedding = load_embedding()
+print(RAVDESS_data.shape)
+print(complete_embedding.shape)
