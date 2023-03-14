@@ -10,7 +10,7 @@ def read_RAVDESS_from_dir(data_path='.', num_emotion=8):
     data = pd.DataFrame(columns=['Emotion', 'Emotion intensity', 'Gender', 'Path'])
     for dirname, _, filenames in os.walk(data_path):
         for filename in filenames:
-            if filename == '.DS_Store':
+            if not filename.endswith('.wav'):
                 continue
             file_path = os.path.join(dirname, filename)
             identifiers = filename.split('.')[0].split('-')

@@ -73,21 +73,23 @@ def generate_from_all():
     data, X, Y = load_representation_data()
     device = 'cpu' if torch.has_mps else 'cpu'
     model = ParallelModel(len(EMOTION)).to(device)
-    model.load_state_dict(torch.load('./models/cnn_transf_parallel_model.pt', map_location=device))
+    model.load_state_dict(torch.load('./bin/models/cnn_transf_parallel_model.pt', map_location=device))
     summary(model)
     with torch.no_grad():
         X_tensor = torch.tensor(X, device=device).float()
         output_logits, output_softmax, complete_embedding = model(X_tensor)
     # save the embedding
-    np.save('./models/RAVDESS_complete_embedding.npy', complete_embedding.cpu().numpy())
+    np.save('./bin/models/RAVDESS_complete_embedding.npy', complete_embedding.cpu().numpy())
 
 
 def load_embedding():
     RAVDESS_data = read_RAVDESS_from_dir('./audio_speech_actors_01-24')
-    complete_embedding = np.load('./models/RAVDESS_complete_embedding.npy')
+    complete_embedding = np.load('./bin/models/RAVDESS_complete_embedding.npy')
     return RAVDESS_data, complete_embedding
 
 
-RAVDESS_data, complete_embedding = load_embedding()
-print(RAVDESS_data.shape)
-print(complete_embedding.shape)
+if __name__ == '__main__':
+    RAVDESS_data, complete_embedding = load_embedding()
+    print(RAVDESS_data.shape)
+    print(complete_embedding.shape)
+    print(RAVDESS_data['Emotion'].value_counts())
