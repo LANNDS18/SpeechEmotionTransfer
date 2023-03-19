@@ -6,8 +6,8 @@ from torch.utils.data import DataLoader
 
 from VAW_GAN import *
 
-EPSILON = Variable(torch.Tensor([1e-6]), requires_grad=False)   # .cuda after tensor
-PI = Variable(torch.Tensor([pi]), requires_grad=False) # .cuda after tensor
+EPSILON = Variable(torch.Tensor([1e-6]), requires_grad=False)  # .cuda after tensor
+PI = Variable(torch.Tensor([pi]), requires_grad=False)  # .cuda after tensor
 
 LR = 1e-4
 EPOCH_VAE = 5
@@ -35,7 +35,7 @@ class Trainer:
         self.D.apply(weights_init)
         self.Encoder = Encoder().cuda()
         self.Encoder.apply(weights_init)
-        self.batch_size = 256    # batch size
+        self.batch_size = 256  # batch size
 
     def load_data(self, x, y):
         self.source = x
@@ -65,10 +65,10 @@ class Trainer:
     def train(self):
 
         gan_loss = 50000
-        x_feature = torch.FloatTensor(-1, 1, 513, 1) # .cuda()  # NHWC
-        x_label = torch.FloatTensor(self.batch_size) # .cuda()
-        y_feature = torch.FloatTensor(-1, 1, 513, 1) # .cuda()  # NHWC
-        y_label = torch.FloatTensor(self.batch_size) # .cuda()
+        x_feature = torch.FloatTensor(-1, 1, 513, 1)  # .cuda()  # NHWC
+        x_label = torch.FloatTensor(self.batch_size)  # .cuda()
+        y_feature = torch.FloatTensor(-1, 1, 513, 1)  # .cuda()  # NHWC
+        y_label = torch.FloatTensor(self.batch_size)  # .cuda()
 
         x_feature = Variable(x_feature)
         x_label = Variable(x_label, requires_grad=False)
@@ -162,8 +162,8 @@ class Trainer:
                 optimG.step()
 
                 print("Epoch:[%d|%d]\tIteration:[%d|%d]\tW: %.3f\tKL(Z): %.3f\tDis: %.3f" % (
-                epoch + 1, EPOCH_VAWGAN + EPOCH_VAE, index + 1, len(Data),
-                loss['conv_s2t'], loss['KL(z)'], loss['Dis']))
+                    epoch + 1, EPOCH_VAWGAN + EPOCH_VAE, index + 1, len(Data),
+                    loss['conv_s2t'], loss['KL(z)'], loss['Dis']))
 
         for epoch in range(EPOCH_VAWGAN):
 
@@ -264,9 +264,9 @@ class Trainer:
                 optimG.step()
                 print(
                     "Epoch:[%d|%d]\tIteration:[%d|%d]\t[D_loss: %.3f\tG_loss: %.3f\tE_loss: %.3f]\t[S2T: %.3f\tKL(z): %.3f\tDis: %.3f]" % (
-                    EPOCH_VAE + epoch + 1, EPOCH_VAWGAN + EPOCH_VAE, index + 1, len(Data),
-                    -0.01 * loss['conv_s2t'], loss['Dis'] + 50 * loss['conv_s2t'], loss['Dis'] + loss['KL(z)'],
-                    loss['conv_s2t'], loss['KL(z)'], loss['Dis']))
+                        EPOCH_VAE + epoch + 1, EPOCH_VAWGAN + EPOCH_VAE, index + 1, len(Data),
+                        -0.01 * loss['conv_s2t'], loss['Dis'] + 50 * loss['conv_s2t'], loss['Dis'] + loss['KL(z)'],
+                        loss['conv_s2t'], loss['KL(z)'], loss['Dis']))
 
                 if (epoch == EPOCH_VAWGAN - 1 and index == (len(Data) - 2)):
                     print('================= store model ==================')
@@ -318,7 +318,3 @@ def GaussianKLD(mu1, lv1, mu2, lv2):
             (lv2 - lv1) + torch.div(v1 + mu_diff_sq, v2 + EPSILON) - 1.)
 
     return torch.sum(dimwise_kld, 1)
-
-
-
-
