@@ -139,21 +139,6 @@ class G(nn.Module):
         return x, logit
 
 
-utterances = 10
-
-encoder = Encoder()
-print('Summary Encoder')
-summary(encoder, (utterances, 1, 513, 1))
-
-print('Summary Generator')
-decoder = G()  # Need to modify the batch size with the embedding method
-# summary(decoder, (batch_size, 128))
-
-print('Summary Discriminator')
-discriminator = D()  # seems good
-summary(discriminator, (256, 1, 513, 1))
-
-
 def weights_init(m):
     classname = m.__class__.__name__
     print(m)
@@ -170,3 +155,19 @@ def weights_init(m):
         nn.init.xavier_normal_(m.weight.data)
         # m.weight.data.normal_(0.0, 0.02)
         # m.bias.data.fill_(0)
+
+
+if __name__ == '__main__':
+    utterances = 10
+
+    encoder = Encoder()
+    print('Summary Encoder')
+    summary(encoder, (utterances, 1, 513, 1))
+
+    print('Summary Generator')
+    decoder = G()  # Need to modify the batch size with the embedding method
+    # summary(decoder, (batch_size, 128))
+
+    print('Summary Discriminator')
+    discriminator = D()  # seems good
+    summary(discriminator, (256, 1, 513, 1))

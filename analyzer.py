@@ -1,4 +1,3 @@
-import glob
 import os
 from os.path import join
 
@@ -6,12 +5,12 @@ import librosa
 import numpy as np
 import pyworld as pw
 
-from preprocess import read_RAVDESS_from_dir
 from emotion_representation import load_embedding
+from preprocess import read_RAVDESS_from_dir
 
 FFT_SIZE = 1024
 SP_DIM = FFT_SIZE // 2 + 1
-FEAT_DIM = SP_DIM + SP_DIM + 1 + 1 + 256 + 1
+FEAT_DIM = SP_DIM + 1 + 320 + 1
 RECORD_BYTES = FEAT_DIM * 4  # all features saved in `float32`x
 
 EPSILON = 1e-10
@@ -121,106 +120,81 @@ class Tanhize(object):
         return (x * .5 + .5) * self.xscale + self.xmin
 
 
-# TODO: apply it to the loaded data
-def read(
-        file_pattern,
-        data_format='NCHW',
-        normalizer=None,
-):
-    '''
-    Read only `sp` and `speaker`
-    Return:
-        `feature`: [b, c]
-        `speaker`: [b,]
-    '''
-
-    read_RAVDESS_from_dir()
-
-    files = [file_name for file_name in glob.glob(file_pattern)]  # 1620(only including Testing Set)
-
-    # filename_queue = tf.train.string_input_producer(files)
-    total_sp_speaker = []
-    total_speaker = []
-    for file_name in files:
-        with open(file_name, "rb") as reader:
-            bytes_data = reader.read()
-            value = np.fromstring(bytes_data, dtype=np.float32).reshape([-1, FEAT_DIM])
-            # print('1: ',value.shape)
-
-            feature = value[:, :SP_DIM]  # NCHW format
-            # print(feature.shape)
-            if normalizer is not None:
-                feature = normalizer.forward_process(feature)
-            speaker_id = value[:, -1].reshape(-1, 1)
-            # print(speaker_id)
-            # print(speaker_id.shape)
-            test = np.concatenate((feature, speaker_id), axis=1)
-            # print('2: ',test.shape)
-            total_sp_speaker.append(test)
-            # total_sp_speaker.append(speaker_id)
-            # print(feature.shape)
-
-    # print(total_sp)
-    # print(total_speaker.shape)
-    total_sp_speaker = np.concatenate(total_sp_speaker, axis=0)
-    # print('3: ',total_sp_speaker.shape)
-    # total_speaker = np.concatenate(total_speaker, axis=0)
-
-    # if normalizer is not None:
-    #    feature = normalizer.forward_process(feature)
-
-    if data_format == 'NCHW':
-        total_sp_speaker = total_sp_speaker.reshape([-1, 1, SP_DIM + 1, 1])
-
-    elif data_format == 'NHWC':
-        total_sp_speaker = total_sp_speaker.reshape([-1, SP_DIM + 1, 1, 1])
-
-    else:
-        pass
-
-    # total_speaker = total_speaker.astype(np.int64)
-
-    # print(total_sp_speaker)
-    # return tf.train.shuffle_batch(
-    #    [feature, speaker],
-    #    batch_size,
-    #    capacity=capacity,
-    #    min_after_dequeue=min_after_dequeue,
-    #    num_threads=num_threads,
-    #    # enqueue_many=True,
-    # )
-
-    return total_sp_speaker
-
-
 def read_whole_features():
     """
     Return
         `feature`: `dict` whose keys are `sp`, `ap`, `f0`, `en`, `speaker`
     """
     total = []
-    data = read_RAVDESS_from_dir(data_path='./audio_speech_actors_01-24/')
+    rav = read_RAVDESS_from_dir(data_path='./audio_speech_actors_01-24/')
 
-    print('{} files found'.format(len(data['Path'])))
+    print('{} files found'.format(len(rav['Path'])))
 
     features, labels, train = load_complete_feature_embeding()
 
-    for i, file in enumerate(data["Path"]):
+    # sp should be 1440 * 601 = 864600
+
+    for i, file in enumerate(rav["Path"]):
         value = {}
         data = train[i].astype(np.float32)
         value['sp'] = data[:, :SP_DIM]
         value['f0'] = data[:, SP_DIM]
         value['emb'] = data[:, SP_DIM + 1: SP_DIM + 1 + EMOTION_EMBEDDING_DIM]
-        value['emotion'] = data[:, SP_DIM + 1 + EMOTION_EMBEDDING_DIM].astype(np.int64)
+        value['emotion'] = labels[i]
         total.append(value)
 
     return total
+
+
+def divide_into_source_target(source: list, target: int):
+    """
+    Divide the data into source and target
+    :param source: list of source speaker id
+    :param target: target speaker id
+    :param data: list of data
+    :return: source data, target data
+    """
+    source_data = []
+    target_data = []
+
+    corpus_name = 'vcc2016'
+
+    normalizer = Tanhize(
+        xmax=np.fromfile('./etc/{}_xmax.npf'.format(corpus_name)),
+        xmin=np.fromfile('./etc/{}_xmin.npf'.format(corpus_name)),
+    )
+
+    feature, label, train = load_complete_feature_embeding()
+    for i in range(len(train)):
+        if label[i][0] == target or label[i][0] in source:
+            for j in range(len(train[i])):
+                reshaped = train[i][j].reshape(-1, FEAT_DIM)
+                feature = reshaped[:, :SP_DIM]
+
+                if normalizer is not None:
+                    feature = normalizer.forward_process(feature)
+
+                emotion_id = reshaped[:, -1].reshape(-1, 1)
+                embedding = reshaped[:, SP_DIM + 1: SP_DIM + 1 + EMOTION_EMBEDDING_DIM].reshape(-1, EMOTION_EMBEDDING_DIM)
+                f0 = reshaped[:, SP_DIM].reshape(-1, 1)
+                test = np.concatenate((feature, f0, embedding, emotion_id), axis=1)
+
+                if label[i][0] == target:
+                    target_data.append(test)
+                else:
+                    source_data.append(test)
+
+    target_data = np.concatenate(target_data, axis=0)
+    source_data = np.concatenate(source_data, axis=0)
+
+    target_data = target_data.reshape([-1, FEAT_DIM, 1, 1])
+    source_data = source_data.reshape([-1, FEAT_DIM, 1, 1])
+
+    return source_data, target_data
 
 
 if __name__ == '__main__':
     # extract_and_save()
     unseen = [5, 6]
     seen = [1, 2, 3, 4, 7, 8]
-    features, labels, train = load_complete_feature_embeding()
-    datad = read_whole_features()
-    print(datad[0]['f0'])
+    # source, target = divide_into_source_target(seen, 6)
