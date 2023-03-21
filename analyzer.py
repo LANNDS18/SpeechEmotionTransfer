@@ -16,6 +16,8 @@ RECORD_BYTES = FEAT_DIM * 4  # all features saved in `float32`x
 
 EPSILON = 1e-10
 
+EMOTION_EMBEDDING_DIM = 320
+
 # original in data arg
 f0_ceil = 500
 fs = 16000
@@ -23,7 +25,7 @@ fs = 16000
 
 def wav2pw(x, fs=16000, fft_size=FFT_SIZE):
     """ Extract WORLD feature from waveform """
-    _f0, t = pw.dio(x, fs, f0_ceil == f0_ceil)  # raw pitch extractor
+    _f0, t = pw.dio(x, fs, f0_ceil=f0_ceil)  # raw pitch extractor
     f0 = pw.stonemask(x, _f0, t, fs)  # pitch refinement
     sp = pw.cheaptrick(x, f0, t, fs, fft_size=fft_size)
     ap = pw.d4c(x, f0, t, fs, fft_size=fft_size)  # extract aperiodicity
@@ -44,7 +46,9 @@ def list_full_filenames(path):
 
 def extract(filename, fft_size=FFT_SIZE, dtype=np.float32):
     ''' Basic (WORLD) feature extraction '''
-    x, _ = librosa.load(filename, sr=fs, mono=True, dtype=np.float64, duration=3, offset=0)
+    sample_wave, _ = librosa.load(filename, sr=fs, mono=True, dtype=np.float64, duration=3, offset=0)
+    sample_wave = sample_wave.astype(np.double)
+    x = sample_wave
     features = wav2pw(x, fs, fft_size=fft_size)
     _ = features['ap']
     f0 = features['f0'].reshape([-1, 1])
@@ -53,13 +57,6 @@ def extract(filename, fft_size=FFT_SIZE, dtype=np.float32):
     sp = np.log10(sp / en)
     array = np.concatenate([sp, f0], axis=1).astype(dtype)
     return array
-
-
-def sample_and_extract():
-    data = read_RAVDESS_from_dir(data_path='./audio_speech_actors_01-24/')
-    sample = data.sample(n=1)['Path'].values[0]
-    sample_wave = extract(sample, fft_size=FFT_SIZE, dtype=np.float32)
-    print(sample_wave.shape)
 
 
 def extract_and_save():
@@ -80,12 +77,13 @@ def extract_and_save():
             np.float32,
         )
 
-        features = np.concatenate([features, emb, labels], 1)  # from 601, 513 to 601, 513 + 1 + 1 + 320
+        features = np.concatenate([features, emb, labels], 1)  # from 601, 513 to 601, 513 + 1 + 320 + 1
         res.append(features)
 
+    # print(res[:, 513])
     np.save('ravdess_complete_feature_embedding.npy', res)
 
-    print(res[0].shape)
+    # print(res[0].shape) == (601, 835)
 
 
 def load_complete_feature_embeding():
@@ -96,12 +94,15 @@ def load_complete_feature_embeding():
         features.append(train[i][:, :-1])
         labels.append(train[i][:, -1])
 
+    return features, labels, train
+
+
+'''
     print(train[0].shape)
     print(len(labels))
     print(len(features))
     print(features[0].shape)
-
-    return features, labels, train
+'''
 
 
 class Tanhize(object):
@@ -120,7 +121,7 @@ class Tanhize(object):
         return (x * .5 + .5) * self.xscale + self.xmin
 
 
-#TODO: apply it to the loaded data
+# TODO: apply it to the loaded data
 def read(
         file_pattern,
         data_format='NCHW',
@@ -132,6 +133,8 @@ def read(
         `feature`: [b, c]
         `speaker`: [b,]
     '''
+
+    read_RAVDESS_from_dir()
 
     files = [file_name for file_name in glob.glob(file_pattern)]  # 1620(only including Testing Set)
 
@@ -190,64 +193,34 @@ def read(
     return total_sp_speaker
 
 
-def read_whole_features(file_pattern, num_epochs=1):
-    '''
+def read_whole_features():
+    """
     Return
         `feature`: `dict` whose keys are `sp`, `ap`, `f0`, `en`, `speaker`
-    '''
+    """
     total = []
+    data = read_RAVDESS_from_dir(data_path='./audio_speech_actors_01-24/')
 
-    files = [file_name for file_name in glob.glob(join(file_pattern))]  # 1620(only including Testing Set)
-    print('{} files found'.format(len(files)))
-    for file_name in files:
+    print('{} files found'.format(len(data['Path'])))
+
+    features, labels, train = load_complete_feature_embeding()
+
+    for i, file in enumerate(data["Path"]):
         value = {}
-        print('\rProcessing {}'.format(file_name), end='')
-        with open(file_name, "rb") as reader:
-            bytes_data = reader.read()
-            data = np.fromstring(bytes_data, dtype=np.float32).reshape(-1, FEAT_DIM)
-            value['sp'] = data[:, :SP_DIM]
-            value['ap'] = data[:, SP_DIM: 2 * SP_DIM]
-            value['f0'] = data[:, SP_DIM * 2]
-            value['en'] = data[:, SP_DIM * 2 + 1]
-            value['speaker'] = data[:, SP_DIM * 2 + 2].astype(np.int64)
-            value['filename'] = file_name
+        data = train[i].astype(np.float32)
+        value['sp'] = data[:, :SP_DIM]
+        value['f0'] = data[:, SP_DIM]
+        value['emb'] = data[:, SP_DIM + 1: SP_DIM + 1 + EMOTION_EMBEDDING_DIM]
+        value['emotion'] = data[:, SP_DIM + 1 + EMOTION_EMBEDDING_DIM].astype(np.int64)
         total.append(value)
 
     return total
 
 
-def pw2wav(features, feat_dim=513, fs=16000):
-    ''' NOTE: Use `order='C'` to ensure Cython compatibility '''
-    print(type(features['sp']))
-    print(type(features['en']))
-    en = np.reshape(features['en'], [-1, 1])
-    sp = np.power(10., features['sp'])
-    sp = en * sp
-    if isinstance(features, dict):
-        return pw.synthesize(
-            features['f0'].astype(np.float64).copy(order='C'),
-            sp.astype(np.float64).copy(order='C'),
-            features['ap'].astype(np.float64).copy(order='C'),
-            fs,
-        )
-    features = features.astype(np.float64)
-    sp = features[:, :feat_dim]
-    ap = features[:, feat_dim:feat_dim * 2]
-    f0 = features[:, feat_dim * 2]
-    en = features[:, feat_dim * 2 + 1]
-    en = np.reshape(en, [-1, 1])
-    sp = np.power(10., sp)
-    sp = en * sp
-    return pw.synthesize(
-        f0.copy(order='C'),
-        sp.copy(order='C'),
-        ap.copy(order='C'),
-        fs
-    )
-
-
 if __name__ == '__main__':
+    # extract_and_save()
     unseen = [5, 6]
     seen = [1, 2, 3, 4, 7, 8]
     features, labels, train = load_complete_feature_embeding()
-
+    datad = read_whole_features()
+    print(datad[0]['f0'])
