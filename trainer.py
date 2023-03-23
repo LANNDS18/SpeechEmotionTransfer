@@ -81,7 +81,7 @@ class Trainer:
 
         )
 
-    def train(self):
+    def train(self, device='cpu'):
 
         gan_loss = 50000
         x_feature = torch.FloatTensor(self.batch_size, 1, 513, 1)  # .cuda()  # NHWC
@@ -89,24 +89,22 @@ class Trainer:
         y_feature = torch.FloatTensor(self.batch_size, 1, 513, 1)  # .cuda()  # NHWC
         y_label = torch.FloatTensor(self.batch_size)  # .cuda()
 
-        x_feature = Variable(x_feature)
-        x_label = Variable(x_label, requires_grad=False)
-        y_feature = Variable(y_feature)
-        y_label = Variable(y_label, requires_grad=False)
-
         x_f0 = torch.FloatTensor(self.batch_size, F0_DIM)  # .cuda()  # NHWC
         x_emb = torch.FloatTensor(self.batch_size, EMBED_DIM)  # .cuda()  # NHWC
-        x_f0 = Variable(x_f0)
-        x_f0 = Variable(x_f0, requires_grad=False)
-        x_emb = Variable(x_emb)
-        x_emb = Variable(x_emb, requires_grad=False)
-
         y_f0 = torch.FloatTensor(self.batch_size, F0_DIM)  # .cuda()  # NHWC
         y_emb = torch.FloatTensor(self.batch_size, EMBED_DIM)  # .cuda()  # NHWC
-        y_f0 = Variable(y_f0)
-        y_f0 = Variable(y_f0, requires_grad=False)
-        y_emb = Variable(y_emb)
-        y_emb = Variable(y_emb, requires_grad=False)
+
+        """
+        x_feature = torch.tensor(x_feature)
+        x_label = torch.tensor(x_label, requires_grad=False)
+        y_feature = torch.tensor(y_feature)
+        y_label = torch.tensor(y_label, requires_grad=False)
+
+        x_f0 = torch.tensor(x_f0, requires_grad=False)
+        x_emb = torch.tensor(x_emb, requires_grad=False)
+        y_f0 = torch.tensor(y_f0, requires_grad=False)
+        y_emb = torch.tensor(y_emb, requires_grad=False)
+        """
 
         optimD = optim.RMSprop([{'params': self.D.parameters()}], lr=LR)
         optimG = optim.RMSprop([{'params': self.G.parameters()}], lr=LR)
@@ -135,6 +133,9 @@ class Trainer:
                 embed_1 = embed_1.view(-1, EMBED_DIM)
                 label_1 = s_data[:, -1, :, :].view(len(s_data))
 
+                if len(s_data) != self.batch_size:
+                    continue # todo: fix last batch not full
+
                 x_feature.data.resize_(feature_1.size())
                 x_label.data.resize_(len(s_data))
 
@@ -146,8 +147,6 @@ class Trainer:
 
                 x_emb.data.resize_(embed_1.size())
                 x_emb.data.copy_(embed_1)
-
-                s = self.circuit_loop(x_feature, label_1, x_f0, x_emb)
 
                 # Target
                 feature_2 = t_data[:, :513, :, :].permute(0, 3, 1, 2)  # NHWC ==> NCHW
@@ -168,10 +167,10 @@ class Trainer:
                 y_emb.data.resize_(embed_2.size())
                 y_emb.data.copy_(embed_2)
 
+                s = self.circuit_loop(x_feature, label_1, x_f0, x_emb)
                 t = self.circuit_loop(y_feature, y_label, y_f0, y_emb)
-
                 # Source 2 Target
-                s2t = self.circuit_loop(x_feature, y_label, y_f0, y_emb)
+                s2t = self.circuit_loop(x_feature, y_label, x_f0, y_emb)
 
                 loss = dict()
                 loss['conv_s2t'] = reconst_loss(t['x_logit'], s2t['xh_logit'])
