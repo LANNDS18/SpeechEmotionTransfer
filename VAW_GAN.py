@@ -1,4 +1,3 @@
-import numpy as np
 from torch import nn
 import torch
 from torch.autograd import Variable
@@ -27,12 +26,12 @@ class D(nn.Module):
         # print('=====================D')
         # print(x.shape)
         h = x.view(-1, 513)  # 原x = (256 * 512)
-        print('h: ', h.shape)
+        # print('h: ', h.shape)
         output = self.main(x)
-        print(output.shape)
+        # print(output.shape)
         output = output.view(-1, 1216)  # 19*64
         x = self.fc(output)  # 等於機率
-        print('=====================D_Finish x = ', x.shape)
+        # print('=====================D_Finish x = ', x.shape)
         return x, h
 
 
@@ -63,9 +62,9 @@ class Encoder(nn.Module):
 
     def forward(self, x):
         output = self.main(x)
-        print(output.shape)
-        output = output.view(-1, 768)
-        print(output.shape)
+        # print(output.shape)
+        output = output.view(-1, 768)  # why 768?
+        # print(output.shape)
         z_mu = self.fc_mu(output)
         z_lv = self.fc_lv(output)
         return z_mu, z_lv
@@ -76,10 +75,10 @@ class G(nn.Module):
     def __init__(self):
         super(G, self).__init__()
 
-        self.Embedding = nn.Linear(10, 128, bias=False)
+        self.Embedding = nn.Linear(1, 128 + 1 + 320, bias=False)
 
-        self.fc1 = nn.Linear(128, 171, bias=True)
-        self.fc2 = nn.Linear(128, 171, bias=True)
+        self.fc1 = nn.Linear(128 + 1 + 320, 171, bias=True)
+        self.fc2 = nn.Linear(128 + 1 + 320, 171, bias=True)
         self.LR = nn.LeakyReLU(0.02)
 
         self.fc = nn.Sequential(
@@ -103,27 +102,29 @@ class G(nn.Module):
         self.Tanh = nn.Tanh()
 
     def forward(self, z):
-        num_sample = 10
-        y = np.zeros((10, 128))
-        person = torch.zeros(y.shape[0], num_sample)
-        for i in range(y.shape[0]):
-            for j in range(num_sample):
-                if j == y[i].all:
-                    person[i][j] = 1
-                    break
-        # print(person.shape)
-        # print(person)
-        who = Variable(person, requires_grad=False)
+        """
+                num_sample = 1
+                y = np.zeros((1, 128 + 1 + 320))
+                person = torch.zeros(y.shape[0], num_sample)
+                for i in range(y.shape[0]):
+                    for j in range(num_sample):
+                        if j == y[i].all:
+                            person[i][j] = 1
+                            break
+                # print(person.shape)
+                # print(person)
+                who = Variable(person, requires_grad=False)
+                output = self.Embedding(who)
+                _y = self.fc2(output)
+                x += _y
+        """
 
-        output = self.Embedding(who)
+        # print(_y.shape)
+        # print(x.shape)
 
         x = 0
         _z = self.fc1(z)
         x += _z
-        _y = self.fc2(output)
-        print(_y.shape)
-        print(x.shape)
-        x += _y
 
         x = self.LR(x)
 
@@ -141,7 +142,7 @@ class G(nn.Module):
 
 def weights_init(m):
     classname = m.__class__.__name__
-    print(m)
+    # print(m)
 
     if classname.find('Conv') != -1:
         nn.init.xavier_normal_(m.weight.data)
@@ -150,7 +151,7 @@ def weights_init(m):
         # nn.init.xavier_normal_(m.weight.data)
         # m.weight.data.normal_(1.0, 0.02)
         m.bias.data.fill_(0)
-        torch.nn.init.uniform(m.weight.data, -1, 1)
+        torch.nn.init.uniform_(m.weight.data, -1, 1)
     elif classname.find('Linear') != -1:
         nn.init.xavier_normal_(m.weight.data)
         # m.weight.data.normal_(0.0, 0.02)
@@ -158,16 +159,15 @@ def weights_init(m):
 
 
 if __name__ == '__main__':
-    utterances = 10
 
     encoder = Encoder()
     print('Summary Encoder')
-    summary(encoder, (utterances, 1, 513, 1))
+    summary(encoder, (256, 1, 513, 1))
 
     print('Summary Generator')
     decoder = G()  # Need to modify the batch size with the embedding method
-    # summary(decoder, (batch_size, 128))
+    summary(decoder, (128, 128 + 1 + 320))
 
     print('Summary Discriminator')
-    discriminator = D()  # seems good
-    summary(discriminator, (256, 1, 513, 1))
+    discriminator = D()  # 128 + 1 + 320 (latent + f0 + emotion)
+    summary(discriminator, (449, 1, 513, 1))

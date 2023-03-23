@@ -6,12 +6,18 @@ from torch.utils.data import DataLoader
 
 from VAW_GAN import *
 
-EPSILON = Variable(torch.Tensor([1e-6]), requires_grad=False)  # .cuda after tensor
-PI = Variable(torch.Tensor([pi]), requires_grad=False)  # .cuda after tensor
+EPSILON = torch.tensor([1e-6], requires_grad=False)  # .cuda after tensor
+PI = torch.tensor([pi], requires_grad=False)  # .cuda after tensor
 
 LR = 1e-4
 EPOCH_VAE = 5
 EPOCH_VAWGAN = 11
+
+FEATURE_DIM = 513 + 1 + 320 + 1
+SP_DIM = 513
+F0_DIM = 1
+EMBED_DIM = 320
+NUM_SAMPLE = 10
 
 
 class ConcatDataset(torch.utils.data.Dataset):
@@ -29,25 +35,38 @@ class Trainer:
 
     def __init__(self):
 
-        self.G = G().cuda()
+        self.G = G()  # .cuda()
         self.G.apply(weights_init)
-        self.D = D().cuda()
+        self.D = D()  # .cuda()
         self.D.apply(weights_init)
-        self.Encoder = Encoder().cuda()
+        self.Encoder = Encoder()  # .cuda()
         self.Encoder.apply(weights_init)
         self.batch_size = 256  # batch size
+        self.source = None
+        self.target = None
 
     def load_data(self, x, y):
         self.source = x
         self.target = y
 
-    def circuit_loop(self, who_feature, who_label):
+    def circuit_loop(self, feature, label, f0, emb):
 
-        z_mu, z_lv = self.Encoder(who_feature)
+        z_mu, z_lv = self.Encoder(feature)
         z = GaussianSampleLayer(z_mu, z_lv)
-        x_logit, x_feature = self.D(who_feature)
-        xh, xh_sig_logit = self.G(z, who_label)  # [256,128]#[256,1]
+        x_logit, x_feature = self.D(feature)
+
+        concat = torch.cat((z, f0, emb), 1)
+
+        xh, xh_sig_logit = self.G(concat)  # [256,128] #[256,1]
         xh_logit, xh_feature = self.D(xh)  # xh_logit[256,1]
+
+        """
+        print("feature_shape: ", feature.shape)
+        print("f0_shape: ", f0.shape)
+        print("emb_shape: ", emb.shape)
+        print("x_feature: ", x_feature.shape)
+        print("z_shape: ", z.shape)
+        """
 
         return dict(
             z=z,
@@ -65,15 +84,29 @@ class Trainer:
     def train(self):
 
         gan_loss = 50000
-        x_feature = torch.FloatTensor(-1, 1, 513, 1)  # .cuda()  # NHWC
+        x_feature = torch.FloatTensor(self.batch_size, 1, 513, 1)  # .cuda()  # NHWC
         x_label = torch.FloatTensor(self.batch_size)  # .cuda()
-        y_feature = torch.FloatTensor(-1, 1, 513, 1)  # .cuda()  # NHWC
+        y_feature = torch.FloatTensor(self.batch_size, 1, 513, 1)  # .cuda()  # NHWC
         y_label = torch.FloatTensor(self.batch_size)  # .cuda()
 
         x_feature = Variable(x_feature)
         x_label = Variable(x_label, requires_grad=False)
         y_feature = Variable(y_feature)
         y_label = Variable(y_label, requires_grad=False)
+
+        x_f0 = torch.FloatTensor(self.batch_size, F0_DIM)  # .cuda()  # NHWC
+        x_emb = torch.FloatTensor(self.batch_size, EMBED_DIM)  # .cuda()  # NHWC
+        x_f0 = Variable(x_f0)
+        x_f0 = Variable(x_f0, requires_grad=False)
+        x_emb = Variable(x_emb)
+        x_emb = Variable(x_emb, requires_grad=False)
+
+        y_f0 = torch.FloatTensor(self.batch_size, F0_DIM)  # .cuda()  # NHWC
+        y_emb = torch.FloatTensor(self.batch_size, EMBED_DIM)  # .cuda()  # NHWC
+        y_f0 = Variable(y_f0)
+        y_f0 = Variable(y_f0, requires_grad=False)
+        y_emb = Variable(y_emb)
+        y_emb = Variable(y_emb, requires_grad=False)
 
         optimD = optim.RMSprop([{'params': self.D.parameters()}], lr=LR)
         optimG = optim.RMSprop([{'params': self.G.parameters()}], lr=LR)
@@ -97,6 +130,9 @@ class Trainer:
             for index, (s_data, t_data) in enumerate(Data):
                 # Source
                 feature_1 = s_data[:, :513, :, :].permute(0, 3, 1, 2)  # NHWC ==> NCHW
+                f0_1 = s_data[:, SP_DIM, :, :].view(-1, 1)
+                embed_1 = s_data[:, SP_DIM + F0_DIM: SP_DIM + F0_DIM + EMBED_DIM, :, :].permute(0, 3, 1, 2)
+                embed_1 = embed_1.view(-1, EMBED_DIM)
                 label_1 = s_data[:, -1, :, :].view(len(s_data))
 
                 x_feature.data.resize_(feature_1.size())
@@ -105,11 +141,20 @@ class Trainer:
                 x_feature.data.copy_(feature_1)
                 x_label.data.copy_(label_1)
 
-                s = self.circuit_loop(x_feature, x_label)
+                x_f0.data.resize_(f0_1.size())
+                x_f0.data.copy_(f0_1)
+
+                x_emb.data.resize_(embed_1.size())
+                x_emb.data.copy_(embed_1)
+
+                s = self.circuit_loop(x_feature, label_1, x_f0, x_emb)
 
                 # Target
                 feature_2 = t_data[:, :513, :, :].permute(0, 3, 1, 2)  # NHWC ==> NCHW
                 label_2 = t_data[:, -1, :, :].view(len(t_data))
+                f0_2 = t_data[:, SP_DIM, :, :].view(-1, 1)
+                embed_2 = t_data[:, SP_DIM + F0_DIM: SP_DIM + F0_DIM + EMBED_DIM, :, :].permute(0, 3, 1, 2)
+                embed_2 = embed_2.view(-1, EMBED_DIM)
 
                 y_feature.data.resize_(feature_2.size())
                 y_label.data.resize_(len(t_data))
@@ -117,18 +162,22 @@ class Trainer:
                 y_feature.data.copy_(feature_2)
                 y_label.data.copy_(label_2)
 
-                t = self.circuit_loop(y_feature, y_label)
+                y_f0.data.resize_(f0_2.size())
+                y_f0.data.copy_(f0_2)
+
+                y_emb.data.resize_(embed_2.size())
+                y_emb.data.copy_(embed_2)
+
+                t = self.circuit_loop(y_feature, y_label, y_f0, y_emb)
 
                 # Source 2 Target
-                s2t = self.circuit_loop(x_feature, y_label)
+                s2t = self.circuit_loop(x_feature, y_label, y_f0, y_emb)
 
                 loss = dict()
-                loss['conv_s2t'] = \
-                    reconst_loss(t['x_logit'], s2t['xh_logit'])
+                loss['conv_s2t'] = reconst_loss(t['x_logit'], s2t['xh_logit'])
                 loss['conv_s2t'] *= 100
 
-                loss['KL(z)'] = \
-                    torch.mean(
+                loss['KL(z)'] = torch.mean(
                         GaussianKLD(
                             s['z_mu'], s['z_lv'],
                             torch.zeros_like(s['z_mu']), torch.zeros_like(s['z_lv']))) + \
@@ -138,8 +187,7 @@ class Trainer:
                             torch.zeros_like(t['z_mu']), torch.zeros_like(t['z_lv'])))
                 loss['KL(z)'] /= 2.0
 
-                loss['Dis'] = \
-                    torch.mean(
+                loss['Dis'] = torch.mean(
                         GaussianLogDensity(
                             x_feature.view(-1, 513),
                             s['xh'].view(-1, 513),
@@ -154,16 +202,19 @@ class Trainer:
                 optimE.zero_grad()
                 obj_Ez = loss['KL(z)'] + loss['Dis']
                 obj_Ez.backward(retain_graph=True)
-                optimE.step()
 
                 optimG.zero_grad()
                 obj_Gx = loss['Dis']
                 obj_Gx.backward()
+
+                optimE.step()
                 optimG.step()
 
                 print("Epoch:[%d|%d]\tIteration:[%d|%d]\tW: %.3f\tKL(Z): %.3f\tDis: %.3f" % (
                     epoch + 1, EPOCH_VAWGAN + EPOCH_VAE, index + 1, len(Data),
                     loss['conv_s2t'], loss['KL(z)'], loss['Dis']))
+
+        exit()
 
         for epoch in range(EPOCH_VAWGAN):
 
@@ -263,12 +314,13 @@ class Trainer:
                 obj_Gx.backward()
                 optimG.step()
                 print(
-                    "Epoch:[%d|%d]\tIteration:[%d|%d]\t[D_loss: %.3f\tG_loss: %.3f\tE_loss: %.3f]\t[S2T: %.3f\tKL(z): %.3f\tDis: %.3f]" % (
+                    "Epoch:[%d|%d]\tIteration:[%d|%d]\t[D_loss: %.3f\tG_loss: %.3f\tE_loss: %.3f]\t[S2T: %.3f\tKL(z): "
+                    "%.3f\tDis: %.3f]" % (
                         EPOCH_VAE + epoch + 1, EPOCH_VAWGAN + EPOCH_VAE, index + 1, len(Data),
                         -0.01 * loss['conv_s2t'], loss['Dis'] + 50 * loss['conv_s2t'], loss['Dis'] + loss['KL(z)'],
                         loss['conv_s2t'], loss['KL(z)'], loss['Dis']))
 
-                if (epoch == EPOCH_VAWGAN - 1 and index == (len(Data) - 2)):
+                if epoch == EPOCH_VAWGAN - 1 and index == (len(Data) - 2):
                     print('================= store model ==================')
                     filename = './model/model_' + str(epoch + EPOCH_VAE + 1) + '.pt'
                     if not os.path.exists(os.path.dirname(filename)):
