@@ -1,6 +1,5 @@
-from torch import nn
 import torch
-from torch.autograd import Variable
+from torch import nn
 from torchinfo import summary
 
 
@@ -119,14 +118,9 @@ class G(nn.Module):
                 x += _y
         """
 
-        # print(_y.shape)
-        # print(x.shape)
-
-        x = 0
         _z = self.fc1(z)
-        x += _z
 
-        x = self.LR(x)
+        x = self.LR(_z)
 
         z = self.fc(x)
 
@@ -159,7 +153,6 @@ def weights_init(m):
 
 
 if __name__ == '__main__':
-
     encoder = Encoder()
     print('Summary Encoder')
     summary(encoder, (256, 1, 513, 1))

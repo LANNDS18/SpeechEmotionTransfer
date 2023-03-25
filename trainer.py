@@ -44,12 +44,13 @@ class Trainer:
         self.batch_size = 256  # batch size
         self.source = None
         self.target = None
+        torch.autograd.set_detect_anomaly(True)
 
     def load_data(self, x, y):
         self.source = x
         self.target = y
 
-    def circuit_loop(self, feature, label, f0, emb):
+    def circuit_loop(self, feature, f0, emb):
 
         z_mu, z_lv = self.Encoder(feature)
         z = GaussianSampleLayer(z_mu, z_lv)
@@ -84,9 +85,9 @@ class Trainer:
     def train(self, device='cpu'):
 
         gan_loss = 50000
-        x_feature = torch.FloatTensor(self.batch_size, 1, 513, 1)  # .cuda()  # NHWC
+        x_feature = torch.FloatTensor(self.batch_size, 1, FEATURE_DIM, 1)  # .cuda()  # NHWC
         x_label = torch.FloatTensor(self.batch_size)  # .cuda()
-        y_feature = torch.FloatTensor(self.batch_size, 1, 513, 1)  # .cuda()  # NHWC
+        y_feature = torch.FloatTensor(self.batch_size, 1, FEATURE_DIM, 1)  # .cuda()  # NHWC
         y_label = torch.FloatTensor(self.batch_size)  # .cuda()
 
         x_f0 = torch.FloatTensor(self.batch_size, F0_DIM)  # .cuda()  # NHWC
@@ -133,20 +134,15 @@ class Trainer:
                 embed_1 = embed_1.view(-1, EMBED_DIM)
                 label_1 = s_data[:, -1, :, :].view(len(s_data))
 
-                if len(s_data) != self.batch_size:
-                    continue # todo: fix last batch not full
+                x_feature.resize_(feature_1.size())
+                x_label.resize_(len(s_data))
+                x_f0.resize_(f0_1.size())
+                x_emb.resize_(embed_1.size())
 
-                x_feature.data.resize_(feature_1.size())
-                x_label.data.resize_(len(s_data))
-
-                x_feature.data.copy_(feature_1)
-                x_label.data.copy_(label_1)
-
-                x_f0.data.resize_(f0_1.size())
-                x_f0.data.copy_(f0_1)
-
-                x_emb.data.resize_(embed_1.size())
-                x_emb.data.copy_(embed_1)
+                x_feature.copy_(feature_1)
+                x_label.copy_(label_1)
+                x_f0.copy_(f0_1)
+                x_emb.copy_(embed_1)
 
                 # Target
                 feature_2 = t_data[:, :513, :, :].permute(0, 3, 1, 2)  # NHWC ==> NCHW
@@ -155,47 +151,43 @@ class Trainer:
                 embed_2 = t_data[:, SP_DIM + F0_DIM: SP_DIM + F0_DIM + EMBED_DIM, :, :].permute(0, 3, 1, 2)
                 embed_2 = embed_2.view(-1, EMBED_DIM)
 
-                y_feature.data.resize_(feature_2.size())
-                y_label.data.resize_(len(t_data))
+                y_feature.resize_(feature_2.size())
+                y_label.resize_(len(t_data))
+                y_f0.resize_(f0_2.size())
+                y_emb.resize_(embed_2.size())
 
-                y_feature.data.copy_(feature_2)
-                y_label.data.copy_(label_2)
+                y_feature.copy_(feature_2)
+                y_label.copy_(label_2)
+                y_f0.copy_(f0_2)
+                y_emb.copy_(embed_2)
 
-                y_f0.data.resize_(f0_2.size())
-                y_f0.data.copy_(f0_2)
-
-                y_emb.data.resize_(embed_2.size())
-                y_emb.data.copy_(embed_2)
-
-                s = self.circuit_loop(x_feature, label_1, x_f0, x_emb)
-                t = self.circuit_loop(y_feature, y_label, y_f0, y_emb)
+                s = self.circuit_loop(x_feature, x_f0, x_emb)
+                t = self.circuit_loop(y_feature, y_f0, y_emb)
                 # Source 2 Target
-                s2t = self.circuit_loop(x_feature, y_label, x_f0, y_emb)
+                s2t = self.circuit_loop(x_feature, x_f0, y_emb)
 
                 loss = dict()
                 loss['conv_s2t'] = reconst_loss(t['x_logit'], s2t['xh_logit'])
                 loss['conv_s2t'] *= 100
 
                 loss['KL(z)'] = torch.mean(
-                        GaussianKLD(
-                            s['z_mu'], s['z_lv'],
-                            torch.zeros_like(s['z_mu']), torch.zeros_like(s['z_lv']))) + \
-                    torch.mean(
-                        GaussianKLD(
-                            t['z_mu'], t['z_lv'],
-                            torch.zeros_like(t['z_mu']), torch.zeros_like(t['z_lv'])))
+                    GaussianKLD(
+                        s['z_mu'], s['z_lv'],
+                        torch.zeros_like(s['z_mu']), torch.zeros_like(s['z_lv']))) + torch.mean(
+                    GaussianKLD(
+                        t['z_mu'], t['z_lv'],
+                        torch.zeros_like(t['z_mu']), torch.zeros_like(t['z_lv'])))
                 loss['KL(z)'] /= 2.0
 
                 loss['Dis'] = torch.mean(
-                        GaussianLogDensity(
-                            x_feature.view(-1, 513),
-                            s['xh'].view(-1, 513),
-                            torch.zeros_like(x_feature.view(-1, 513)))) + \
-                    torch.mean(
-                        GaussianLogDensity(
-                            y_feature.view(-1, 513),
-                            t['xh'].view(-1, 513),
-                            torch.zeros_like(y_feature.view(-1, 513))))
+                    GaussianLogDensity(
+                        x_feature.view(-1, 513),
+                        s['xh'].view(-1, 513),
+                        torch.zeros_like(x_feature.view(-1, 513)))) + torch.mean(
+                    GaussianLogDensity(
+                        y_feature.view(-1, 513),
+                        t['xh'].view(-1, 513),
+                        torch.zeros_like(y_feature.view(-1, 513))))
                 loss['Dis'] /= - 2.0
 
                 optimE.zero_grad()
@@ -213,34 +205,42 @@ class Trainer:
                     epoch + 1, EPOCH_VAWGAN + EPOCH_VAE, index + 1, len(Data),
                     loss['conv_s2t'], loss['KL(z)'], loss['Dis']))
 
-        exit()
-
         for epoch in range(EPOCH_VAWGAN):
 
-            schedulerD.step()
-            schedulerG.step()
-            schedulerE.step()
             for index, (s_data, t_data) in enumerate(Data):
 
                 # Source
                 feature_1 = s_data[:, :513, :, :].permute(0, 3, 1, 2)  # NHWC ==> NCHW
                 label_1 = s_data[:, -1, :, :].view(len(s_data))
+                f0_1 = s_data[:, SP_DIM, :, :].view(-1, 1)
+                embed_1 = s_data[:, SP_DIM + F0_DIM:SP_DIM + F0_DIM + EMBED_DIM, :, :].permute(0, 3, 1, 2).view(-1,
+                                                                                                                EMBED_DIM)
+                x_feature.resize_(feature_1.size())
+                x_label.resize_(len(s_data))
+                x_f0.resize_(f0_1.size())
+                x_emb.resize_(embed_1.size())
 
-                x_feature.data.resize_(feature_1.size())
-                x_label.data.resize_(len(s_data))
-
-                x_feature.data.copy_(feature_1)
-                x_label.data.copy_(label_1)
+                x_feature.copy_(feature_1)
+                x_label.copy_(label_1)
+                x_f0.copy_(f0_1)
+                x_emb.copy_(embed_1)
 
                 # Target
                 feature_2 = t_data[:, :513, :, :].permute(0, 3, 1, 2)  # NHWC ==> NCHW
                 label_2 = t_data[:, -1, :, :].view(len(t_data))
+                f0_2 = t_data[:, SP_DIM, :, :].view(-1, 1)
+                embed_2 = t_data[:, SP_DIM + F0_DIM: SP_DIM + F0_DIM + EMBED_DIM, :, :].permute(0, 3, 1, 2).view(-1,
+                                                                                                                 EMBED_DIM)
 
-                y_feature.data.resize_(feature_2.size())
-                y_label.data.resize_(len(t_data))
+                y_feature.resize_(feature_2.size())
+                y_label.resize_(len(t_data))
+                y_f0.resize_(f0_2.size())
+                y_emb.resize_(embed_2.size())
 
-                y_feature.data.copy_(feature_2)
-                y_label.data.copy_(label_2)
+                y_feature.copy_(feature_2)
+                y_label.copy_(label_2)
+                y_f0.copy_(f0_2)
+                y_emb.copy_(embed_2)
 
                 t = dict()
 
@@ -259,58 +259,74 @@ class Trainer:
                         p.data.clamp_(-0.01, 0.01)
                     # Target result
                     optimD.zero_grad()
-                    t = self.circuit_loop(y_feature, y_label)
+                    t = self.circuit_loop(y_feature, y_f0, y_emb)
                     # Source 2 Target result
-                    s2t = self.circuit_loop(x_feature, y_label)
+                    s2t = self.circuit_loop(x_feature, x_f0, y_emb)
 
-                    loss['conv_s2t'] = \
-                        reconst_loss(t['x_logit'], s2t['xh_logit'])
-
+                    loss['conv_s2t'] = reconst_loss(t['x_logit'], s2t['xh_logit'])
                     loss['conv_s2t'] *= 100
-                    # print ("%.3f\t" %(loss['conv_s2t']))
-                    # print(   loss )
-                    obj_Dx = -0.01 * loss['conv_s2t']
-                    obj_Dx.backward(retain_graph=True)
-                    optimD.step()
 
-                    # Source result
-                s = self.circuit_loop(x_feature, x_label)
+                    # print("%.3f\t" % (loss['conv_s2t']))
+                    # print(loss)
 
-                loss['KL(z)'] = \
-                    torch.mean(
-                        GaussianKLD(
-                            s['z_mu'], s['z_lv'],
-                            torch.zeros_like(s['z_mu']), torch.zeros_like(s['z_lv']))) + \
-                    torch.mean(
-                        GaussianKLD(
-                            t['z_mu'], t['z_lv'],
-                            torch.zeros_like(t['z_mu']), torch.zeros_like(t['z_lv'])))
+                    if D_index != D_Iter - 1:
+                        # if not last epoch, run normally
+                        obj_Dx = -0.01 * loss['conv_s2t']
+                        obj_Dx.backward(retain_graph=True)
+                        optimD.step()
+                    else:
+                        # if last epoch, update G as well,
+                        optimG.zero_grad()
+
+                        obj_Gx = 50 * loss['conv_s2t']
+                        obj_Dx = -0.01 * loss['conv_s2t']
+
+                        obj_Gx.backward(retain_graph=True)
+                        obj_Dx.backward(retain_graph=True)
+                        optimG.step()
+                        optimD.step()
+
+                # target result
+                t = self.circuit_loop(y_feature, y_f0, y_emb)
+                # Source result
+                s = self.circuit_loop(x_feature, x_f0, x_emb)
+
+                loss['KL(z)'] = torch.mean(
+                    GaussianKLD(
+                        s['z_mu'], s['z_lv'],
+                        torch.zeros_like(s['z_mu']), torch.zeros_like(s['z_lv']))
+                ) + torch.mean(
+                    GaussianKLD(
+                        t['z_mu'], t['z_lv'],
+                        torch.zeros_like(t['z_mu']), torch.zeros_like(t['z_lv']))
+                )
                 loss['KL(z)'] /= 2.0
 
-                loss['Dis'] = \
-                    torch.mean(
-                        GaussianLogDensity(
-                            x_feature.view(-1, 513),
-                            s['xh'].view(-1, 513),
-                            torch.zeros_like(x_feature.view(-1, 513)))) + \
-                    torch.mean(
-                        GaussianLogDensity(
-                            y_feature.view(-1, 513),
-                            t['xh'].view(-1, 513),
-                            torch.zeros_like(y_feature.view(-1, 513))))
-                loss['Dis'] /= - 2.0
-                # print(   loss )
+                loss['Dis'] = torch.mean(
+                    GaussianLogDensity(
+                        x_feature.view(-1, 513),
+                        s['xh'].view(-1, 513),
+                        torch.zeros_like(x_feature.view(-1, 513)))
+                ) + torch.mean(
+                    GaussianLogDensity(
+                        y_feature.view(-1, 513),
+                        t['xh'].view(-1, 513),
+                        torch.zeros_like(y_feature.view(-1, 513)))
+                )
 
-                # print ("%.3f\t" %(loss['conv_s2t']))
+                loss['Dis'] /= - 2.0
+                # print(loss)
+                # print("%.3f\t" % (loss['conv_s2t']))
 
                 optimE.zero_grad()
                 obj_Ez = loss['KL(z)'] + loss['Dis']
                 obj_Ez.backward(retain_graph=True)
-                optimE.step()
 
                 optimG.zero_grad()
-                obj_Gx = loss['Dis'] + 50 * loss['conv_s2t']
+                obj_Gx = loss['Dis']
                 obj_Gx.backward()
+
+                optimE.step()
                 optimG.step()
                 print(
                     "Epoch:[%d|%d]\tIteration:[%d|%d]\t[D_loss: %.3f\tG_loss: %.3f\tE_loss: %.3f]\t[S2T: %.3f\tKL(z): "
@@ -332,6 +348,10 @@ class Trainer:
                     torch.save(self, filename)
                     print('=================Finish store model ==================')
                     gan_loss = obj_Gx
+
+            schedulerD.step()  # should be called after step()
+            schedulerG.step()  # should be called after step()
+            schedulerE.step()  # should be called after step()
 
 
 def reconst_loss(x, xh):
