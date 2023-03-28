@@ -141,21 +141,60 @@ def read_whole_features():
         value['f0'] = data[:, SP_DIM]
         value['emb'] = data[:, SP_DIM + 1: SP_DIM + 1 + EMOTION_EMBEDDING_DIM]
         value['emotion'] = labels[i]
+        value['path'] = file
+
         total.append(value)
 
     return total
 
 
-def divide_into_source_target(source: list, target: int):
+def get_data_from_(emotion_id, des='train', test_ratio=0.2):
+    train_ratio = 1.0 - test_ratio
+    rav = read_RAVDESS_from_dir(data_path='./audio_speech_actors_01-24/')
+    rav_emo = rav[rav['Emotion'] == emotion_id]
+    index = np.round(rav_emo.shape[0] * train_ratio).astype(int)
+    if des == 'train':
+        res = rav_emo[0:index]
+    else:
+        res = rav_emo[index:]
+    return res
+
+
+def map_to_target_path(path, target_id): # :todo
+    print(path)
+    identifiers = path.split('.')[1].split('-')
+    print(identifiers)
+    return path
+
+
+def load_test_data(source: int, target: int, test_train_ratio=0.2):
+    feature, label, data = load_complete_feature_embeding()
+    test_data = get_data_from_(source, 'test', test_train_ratio)
+    test_ids = test_data.index
+
+    data = data[test_ids]
+
+    test_res = []
+
+    for i, d in enumerate(test_data.iloc):
+        path = test_data.iloc[i]['Path']
+        target_path = map_to_target_path(path, target)
+        res = {'Path': test_data.iloc[i]['Path'], 'Emotion': source, 'Feature': data[i], 'Target_Path': target_path}
+        test_res.append(res)
+
+    return test_res
+
+
+def divide_into_source_target(source: list, target: int, trian_test_ratio=0.2):
     """
     Divide the data into source and target
     :param source: list of source speaker id
     :param target: target speaker id
     :param data: list of data
-    :return: source data, target data
+    :return: source train data, target data
     """
-    source_data = []
     target_data = []
+    source_train_data = []
 
     corpus_name = 'vcc2016'
 
@@ -164,37 +203,88 @@ def divide_into_source_target(source: list, target: int):
         xmin=np.fromfile('./etc/{}_xmin.npf'.format(corpus_name)),
     )
 
-    feature, label, train = load_complete_feature_embeding()
-    for i in range(len(train)):
+    feature, label, data = load_complete_feature_embeding()
+
+    train_ids = []
+    for i in range(len(source)):
+        train_ids.append(get_data_from_(source[i], 'train', trian_test_ratio).index)
+
+    target_ids = get_data_from_(target, 'train', trian_test_ratio).index
+
+    count = 0
+
+    for i in range(len(data)):
         if label[i][0] == target or label[i][0] in source:
-            for j in range(len(train[i])):
-                reshaped = train[i][j].reshape(-1, FEAT_DIM)
+            for j in range(len(data[i])):
+                reshaped = data[i][j].reshape(-1, FEAT_DIM)
                 feature = reshaped[:, :SP_DIM]
 
                 if normalizer is not None:
                     feature = normalizer.forward_process(feature)
 
                 emotion_id = reshaped[:, -1].reshape(-1, 1)
-                embedding = reshaped[:, SP_DIM + 1: SP_DIM + 1 + EMOTION_EMBEDDING_DIM].reshape(-1, EMOTION_EMBEDDING_DIM)
+                embedding = reshaped[:, SP_DIM + 1: SP_DIM + 1 + EMOTION_EMBEDDING_DIM].reshape(-1,
+                                                                                                EMOTION_EMBEDDING_DIM)
                 f0 = reshaped[:, SP_DIM].reshape(-1, 1)
                 test = np.concatenate((feature, f0, embedding, emotion_id), axis=1)
 
-                if label[i][0] == target:
+                if label[i][0] == target and i in target_ids:
                     target_data.append(test)
                 else:
-                    source_data.append(test)
+                    for k in range(len(source)):
+                        if i in train_ids[k]:
+                            source_train_data.append(test)
 
+        if label[i][0] in source:
+            count += 1
+
+    print(f"Number Train Source Files {len(source_train_data) / 601}, out of {count}")
     target_data = np.concatenate(target_data, axis=0)
-    source_data = np.concatenate(source_data, axis=0)
+    source_train_data = np.concatenate(source_train_data, axis=0)
 
     target_data = target_data.reshape([-1, FEAT_DIM, 1, 1])
-    source_data = source_data.reshape([-1, FEAT_DIM, 1, 1])
+    source_train_data = source_train_data.reshape([-1, FEAT_DIM, 1, 1])
 
-    return source_data, target_data
+    print(source_train_data.shape)
+
+    return source_train_data, target_data
+
+
+def pw2wav(features, feat_dim=513, fs=16000):
+    ''' NOTE: Use `order='C'` to ensure Cython compatibility '''
+    print(type(features['sp']))
+    print(type(features['en']))
+    en = np.reshape(features['en'], [-1, 1])
+    sp = np.power(10., features['sp'])
+    sp = en * sp
+    if isinstance(features, dict):
+        return pw.synthesize(
+            features['f0'].astype(np.float64).copy(order='C'),
+            sp.astype(np.float64).copy(order='C'),
+            features['ap'].astype(np.float64).copy(order='C'),
+            fs,
+        )
+    features = features.astype(np.float64)
+    sp = features[:, :feat_dim]
+    ap = features[:, feat_dim:feat_dim * 2]
+    f0 = features[:, feat_dim * 2]
+    en = features[:, feat_dim * 2 + 1]
+    en = np.reshape(en, [-1, 1])
+    sp = np.power(10., sp)
+    sp = en * sp
+    return pw.synthesize(
+        f0.copy(order='C'),
+        sp.copy(order='C'),
+        ap.copy(order='C'),
+        fs
+    )
 
 
 if __name__ == '__main__':
     # extract_and_save()
     unseen = [5, 6]
-    seen = [1, 2, 3, 4, 7, 8]
-    # source, target = divide_into_source_target(seen, 6)
+    seen = [1]
+    # train_source, train_target = divide_into_source_target(seen, 6)
+    # print(train_source.shape)
+    # print(train_target.shape)
+    load_test_data(1, 2)

@@ -1,13 +1,10 @@
 import os
 from math import pi
-
 import torch.optim as optim
 from torch.utils.data import DataLoader
 
 from VAW_GAN import *
 
-EPSILON = torch.tensor([1e-6], requires_grad=False)  # .cuda after tensor
-PI = torch.tensor([pi], requires_grad=False)  # .cuda after tensor
 
 LR = 1e-4
 EPOCH_VAE = 5
@@ -18,6 +15,12 @@ SP_DIM = 513
 F0_DIM = 1
 EMBED_DIM = 320
 NUM_SAMPLE = 10
+
+DEVICE = torch.device('mps') if torch.has_mps else torch.device('cpu')
+print("Device is: ", DEVICE)
+
+EPSILON = torch.tensor([1e-6], requires_grad=False).to(DEVICE)
+PI = torch.tensor([pi], requires_grad=False).to(DEVICE)
 
 
 class ConcatDataset(torch.utils.data.Dataset):
@@ -33,17 +36,18 @@ class ConcatDataset(torch.utils.data.Dataset):
 
 class Trainer:
 
-    def __init__(self):
+    def __init__(self, name):
 
-        self.G = G()  # .cuda()
+        self.G = G().to(device=DEVICE)  # .cuda()
         self.G.apply(weights_init)
-        self.D = D()  # .cuda()
+        self.D = D().to(device=DEVICE) # .cuda()
         self.D.apply(weights_init)
-        self.Encoder = Encoder()  # .cuda()
+        self.Encoder = Encoder().to(device=DEVICE)  # .cuda()
         self.Encoder.apply(weights_init)
         self.batch_size = 256  # batch size
         self.source = None
         self.target = None
+        self.name = name
         torch.autograd.set_detect_anomaly(True)
 
     def load_data(self, x, y):
@@ -85,15 +89,15 @@ class Trainer:
     def train(self, device='cpu'):
 
         gan_loss = 50000
-        x_feature = torch.FloatTensor(self.batch_size, 1, FEATURE_DIM, 1)  # .cuda()  # NHWC
-        x_label = torch.FloatTensor(self.batch_size)  # .cuda()
-        y_feature = torch.FloatTensor(self.batch_size, 1, FEATURE_DIM, 1)  # .cuda()  # NHWC
-        y_label = torch.FloatTensor(self.batch_size)  # .cuda()
+        x_feature = torch.FloatTensor(self.batch_size, 1, FEATURE_DIM, 1).to(device=DEVICE)  # .cuda()  # NHWC
+        x_label = torch.FloatTensor(self.batch_size).to(device=DEVICE)  # .cuda()
+        y_feature = torch.FloatTensor(self.batch_size, 1, FEATURE_DIM, 1).to(device=DEVICE)  # .cuda()  # NHWC
+        y_label = torch.FloatTensor(self.batch_size).to(device=DEVICE)  # .cuda()
 
-        x_f0 = torch.FloatTensor(self.batch_size, F0_DIM)  # .cuda()  # NHWC
-        x_emb = torch.FloatTensor(self.batch_size, EMBED_DIM)  # .cuda()  # NHWC
-        y_f0 = torch.FloatTensor(self.batch_size, F0_DIM)  # .cuda()  # NHWC
-        y_emb = torch.FloatTensor(self.batch_size, EMBED_DIM)  # .cuda()  # NHWC
+        x_f0 = torch.FloatTensor(self.batch_size, F0_DIM).to(device=DEVICE)  # .cuda()  # NHWC
+        x_emb = torch.FloatTensor(self.batch_size, EMBED_DIM).to(device=DEVICE)  # .cuda()  # NHWC
+        y_f0 = torch.FloatTensor(self.batch_size, F0_DIM).to(device=DEVICE)  # .cuda()  # NHWC
+        y_emb = torch.FloatTensor(self.batch_size, EMBED_DIM).to(device=DEVICE)  # .cuda()  # NHWC
 
         """
         x_feature = torch.tensor(x_feature)
@@ -337,7 +341,7 @@ class Trainer:
 
                 if epoch == EPOCH_VAWGAN - 1 and index == (len(Data) - 2):
                     print('================= store model ==================')
-                    filename = './model/model_' + str(epoch + EPOCH_VAE + 1) + '.pt'
+                    filename = f'./model/model_{self.name}.pt'
                     if not os.path.exists(os.path.dirname(filename)):
                         try:
                             os.makedirs(os.path.dirname(filename))

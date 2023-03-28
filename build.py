@@ -1,4 +1,3 @@
-import argparse
 import errno
 import os
 
@@ -14,14 +13,14 @@ def main():
         if e.errno != errno.EEXIST:
             raise
     # ==== Save max and min value ====
-    x = read_whole_features()  # TODO: use it as a obj and keep `n_files`
+    x = read_whole_features()
     x_all = list()
     f0_all = list()
     embedding_all = list()
     emotion_all = list()
 
     counter = 1
-    for features in x:  # TODO: read according to speaker instead of all speakers
+    for features in x:
 
         print('\rProcessing {}'.format(counter), end='')
         x_all.append(features['sp'])
