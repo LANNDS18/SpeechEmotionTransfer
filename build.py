@@ -3,7 +3,7 @@ import os
 
 import numpy as np
 
-from analyzer import read_whole_features
+from analyzer import read_whole_features, extract_and_save
 
 
 def main():
@@ -73,4 +73,5 @@ def main():
 
 
 if __name__ == '__main__':
+    extract_and_save()
     main()
