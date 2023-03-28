@@ -58,6 +58,19 @@ def extract(filename, fft_size=FFT_SIZE, dtype=np.float32):
     return array
 
 
+def extract_for_test(filename, fft_size=FFT_SIZE, dtype=np.float32):
+    ''' Basic (WORLD) feature extraction '''
+    sample_wave, _ = librosa.load(filename, sr=fs, mono=True, dtype=np.float64, duration=3, offset=0)
+    sample_wave = sample_wave.astype(np.double)
+    x = sample_wave
+    features = wav2pw(x, fs, fft_size=fft_size)
+    ap = features['ap']
+    sp = features['sp']
+    en = np.sum(sp + EPSILON, axis=1, keepdims=True)
+    array = np.concatenate([ap, en], axis=1).astype(dtype)
+    return array
+
+
 def extract_and_save():
     RAVDESS_data, complete_embedding = load_embedding()
 
@@ -188,7 +201,8 @@ def load_test_data(source: int, target: int, test_train_ratio=0.2):
     for i, d in enumerate(test_data.iloc):
         path = test_data.iloc[i]['Path']
         target_path = map_to_target_path(path, target)
-        res = {'Path': test_data.iloc[i]['Path'], 'Emotion': source, 'Feature': data[i], 'Target_Path': target_path}
+        ap_en = extract_for_test(path)
+        res = {'Path': test_data.iloc[i]['Path'], 'Emotion': source, 'Feature': data[i], 'Target_Path': target_path, 'ap_en': ap_en}
         test_res.append(res)
 
     return test_res
