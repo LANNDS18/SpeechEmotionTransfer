@@ -160,10 +160,19 @@ def get_data_from_(emotion_id, des='train', test_ratio=0.2):
     return res
 
 
-def map_to_target_path(path, target_id): # :todo
-    print(path)
-    identifiers = path.split('.')[1].split('-')
-    print(identifiers)
+def map_to_target_path(path, target_id):
+    # Split the file path into components
+    path_parts = path.split('/')
+    # Get the file name (the last part of the path)
+    file_name = path_parts[-1]
+    # Split the file name into sections based on the '-' delimiter
+    name_parts = file_name.split('-')
+    # Replace the third section with the new value, formatted as '0x'
+    name_parts[2] = f'0{target_id}'
+    # Reassemble the file name with the updated section
+    new_file_name = '-'.join(name_parts)
+    # Reassemble the file path with the updated file name
+    new_path = '/'.join(path_parts[:-1] + [new_file_name])
     return path
 
 
@@ -287,4 +296,4 @@ if __name__ == '__main__':
     # train_source, train_target = divide_into_source_target(seen, 6)
     # print(train_source.shape)
     # print(train_target.shape)
-    load_test_data(1, 2)
+    load_test_data(6, 2)
