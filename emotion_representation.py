@@ -111,8 +111,24 @@ def load_embedding():
     return RAVDESS_data, complete_embedding
 
 
+def get_emotion_representation(emotion_id):
+    RAVDESS_data, complete_embedding = load_embedding()
+    emotion_index = RAVDESS_data[RAVDESS_data['Emotion'] == emotion_id].index
+    print(len(emotion_index))
+    rep = np.zeros((320,))
+    count = 0
+    for i, d in enumerate(complete_embedding):
+        if i in emotion_index:
+            count += 1
+            rep += complete_embedding[i]
+    rep /= count
+    return rep
+
+
 if __name__ == '__main__':
     RAVDESS_data, complete_embedding = load_embedding()
     print(RAVDESS_data.shape)
     print(complete_embedding.shape)
     print(RAVDESS_data['Emotion'].value_counts())
+    print(RAVDESS_data.head())
+    get_emotion_representation(5)
