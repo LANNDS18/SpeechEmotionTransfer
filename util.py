@@ -2,6 +2,8 @@ import os
 import sys
 from datetime import datetime
 import numpy as np
+import torch
+from torch.utils.data import Dataset
 
 
 def save(saver, sess, logdir, step):
@@ -71,3 +73,51 @@ def melcd(array1, array2):
         raise ValueError("Dimension mismatch")
 
     return mcd
+
+
+class ConcatDataset(Dataset):
+    def __init__(self, *datasets):
+        self.datasets = datasets
+
+    def __getitem__(self, i):
+        return tuple(d[i] for d in self.datasets)
+
+    def __len__(self):
+        return min(len(d) for d in self.datasets)
+
+
+def reconst_loss(x, xh):
+    return torch.mean(x) - torch.mean(xh)
+
+
+def GaussianSampleLayer(z_mu, z_lv):
+    std = torch.sqrt(torch.exp(z_lv))
+    eps = torch.randn_like(std)
+    return eps.mul(std).add_(z_mu)
+
+
+def GaussianLogDensity(x, mu, log_var, PI, EPSILON):
+    c = torch.log(2. * PI)
+    var = torch.exp(log_var)
+    x_mu2 = torch.mul(x - mu, x - mu)  # [Issue] not sure the dim works or not?
+    x_mu2_over_var = torch.div(x_mu2, var + EPSILON)
+    log_prob = -0.5 * (c + log_var + x_mu2_over_var)
+    log_prob = torch.sum(log_prob, 1)  # keep_dims=True,
+    return log_prob
+
+
+def GaussianKLD(mu1, lv1, mu2, lv2, EPSILON):
+    ''' Kullback-Leibler divergence of two Gaussians
+        *Assuming that each dimension is independent
+        mu: mean
+        lv: log variance
+        Equation: http://stats.stackexchange.com/questions/7440/kl-divergence-between-two-univariate-gaussians
+    '''
+
+    v1 = torch.exp(lv1)
+    v2 = torch.exp(lv2)
+    mu_diff_sq = torch.mul(mu1 - mu2, mu1 - mu2)
+    dimwise_kld = .5 * (
+            (lv2 - lv1) + torch.div(v1 + mu_diff_sq, v2 + EPSILON) - 1.)
+
+    return torch.sum(dimwise_kld, 1)

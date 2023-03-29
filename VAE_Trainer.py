@@ -6,8 +6,7 @@ from torch.utils.data import DataLoader
 from VAW_GAN import *
 
 LR = 1e-4
-EPOCH_VAE = 8
-EPOCH_VAWGAN = 20
+EPOCH_VAE = 10
 
 FEATURE_DIM = 513 + 1 + 320 + 1
 SP_DIM = 513
@@ -32,7 +31,7 @@ class ConcatDataset(torch.utils.data.Dataset):
         return min(len(d) for d in self.datasets)
 
 
-class Trainer:
+class VAE_Trainer:
 
     def __init__(self, name):
 
@@ -113,7 +112,7 @@ class Trainer:
         optimG = optim.RMSprop([{'params': self.G.parameters()}], lr=LR)
         optimE = optim.RMSprop([{'params': self.Encoder.parameters()}], lr=LR)
 
-        schedulerD = torch.optim.lr_scheduler.StepLR(optimD, step_size=10, gamma=0.1)
+        # schedulerD = torch.optim.lr_scheduler.StepLR(optimD, step_size=10, gamma=0.1)
         schedulerG = torch.optim.lr_scheduler.StepLR(optimG, step_size=10, gamma=0.1)
         schedulerE = torch.optim.lr_scheduler.StepLR(optimE, step_size=10, gamma=0.1)
 
@@ -121,13 +120,8 @@ class Trainer:
             ConcatDataset(self.source, self.target),
             batch_size=self.batch_size, shuffle=True, num_workers=1)
 
-        # print('N H W C')
-
         for epoch in range(EPOCH_VAE):
 
-            # schedulerD.step()
-            # schedulerG.step()
-            # schedulerE.step()
             for index, (s_data, t_data) in enumerate(Data):
                 # Source
                 feature_1 = s_data[:, :513, :, :].permute(0, 3, 1, 2)  # NHWC ==> NCHW
@@ -166,11 +160,11 @@ class Trainer:
                 s = self.circuit_loop(x_feature, x_f0, x_emb)
                 t = self.circuit_loop(y_feature, y_f0, y_emb)
                 # Source 2 Target
-                s2t = self.circuit_loop(x_feature, x_f0, y_emb)
+                s2t = self.circuit_loop(x_feature, y_f0, y_emb)
 
                 loss = dict()
                 loss['conv_s2t'] = reconst_loss(t['x_logit'], s2t['xh_logit'])
-                loss['conv_s2t'] *= 100
+                # loss['conv_s2t'] *= 100 #?
 
                 loss['KL(z)'] = torch.mean(
                     GaussianKLD(
@@ -204,140 +198,10 @@ class Trainer:
                 optimG.step()
 
                 print("Epoch:[%d|%d]\tIteration:[%d|%d]\tW: %.3f\tKL(Z): %.3f\tDis: %.3f" % (
-                    epoch + 1, EPOCH_VAWGAN + EPOCH_VAE, index + 1, len(Data),
+                    epoch + 1, EPOCH_VAE, index + 1, len(Data),
                     loss['conv_s2t'], loss['KL(z)'], loss['Dis']))
 
-        for epoch in range(EPOCH_VAWGAN):
-
-            for index, (s_data, t_data) in enumerate(Data):
-
-                # Source
-                feature_1 = s_data[:, :513, :, :].permute(0, 3, 1, 2)  # NHWC ==> NCHW
-                label_1 = s_data[:, -1, :, :].view(len(s_data))
-                f0_1 = s_data[:, SP_DIM, :, :].view(-1, 1)
-                embed_1 = s_data[:, SP_DIM + F0_DIM:SP_DIM + F0_DIM + EMBED_DIM, :, :].permute(0, 3, 1, 2).view(-1,
-                                                                                                                EMBED_DIM)
-                x_feature.resize_(feature_1.size())
-                x_label.resize_(len(s_data))
-                x_f0.resize_(f0_1.size())
-                x_emb.resize_(embed_1.size())
-
-                x_feature.copy_(feature_1)
-                x_label.copy_(label_1)
-                x_f0.copy_(f0_1)
-                x_emb.copy_(embed_1)
-
-                # Target
-                feature_2 = t_data[:, :513, :, :].permute(0, 3, 1, 2)  # NHWC ==> NCHW
-                label_2 = t_data[:, -1, :, :].view(len(t_data))
-                f0_2 = t_data[:, SP_DIM, :, :].view(-1, 1)
-                embed_2 = t_data[:, SP_DIM + F0_DIM: SP_DIM + F0_DIM + EMBED_DIM, :, :].permute(0, 3, 1, 2).view(-1,
-                                                                                                                 EMBED_DIM)
-
-                y_feature.resize_(feature_2.size())
-                y_label.resize_(len(t_data))
-                y_f0.resize_(f0_2.size())
-                y_emb.resize_(embed_2.size())
-
-                y_feature.copy_(feature_2)
-                y_label.copy_(label_2)
-                y_f0.copy_(f0_2)
-                y_emb.copy_(embed_2)
-
-                t = dict()
-
-                # Source 2 Target
-                s2t = dict()
-
-                loss = dict()
-
-                if (epoch + EPOCH_VAE == EPOCH_VAE and index < 25) or (index % 100 == 0):
-                    D_Iter = 100
-                else:
-                    D_Iter = 10
-
-                for D_index in range(D_Iter):
-                    for p in self.D.parameters():
-                        p.data.clamp_(-0.01, 0.01)
-                    # Target result
-                    optimD.zero_grad()
-                    t = self.circuit_loop(y_feature, y_f0, y_emb)
-                    # Source 2 Target result
-                    s2t = self.circuit_loop(x_feature, x_f0, y_emb)
-
-                    loss['conv_s2t'] = reconst_loss(t['x_logit'], s2t['xh_logit'])
-                    loss['conv_s2t'] *= 100
-
-                    # print("%.3f\t" % (loss['conv_s2t']))
-                    # print(loss)
-
-                    if D_index != D_Iter - 1:
-                        # if not last epoch, run normally
-                        obj_Dx = -0.01 * loss['conv_s2t']
-                        obj_Dx.backward(retain_graph=True)
-                        optimD.step()
-                    else:
-                        # if last epoch, update G as well,
-                        optimG.zero_grad()
-
-                        obj_Gx = 50 * loss['conv_s2t']
-                        obj_Dx = -0.01 * loss['conv_s2t']
-
-                        obj_Gx.backward(retain_graph=True)
-                        obj_Dx.backward(retain_graph=True)
-                        optimG.step()
-                        optimD.step()
-
-                # target result
-                t = self.circuit_loop(y_feature, y_f0, y_emb)
-                # Source result
-                s = self.circuit_loop(x_feature, x_f0, x_emb)
-
-                loss['KL(z)'] = torch.mean(
-                    GaussianKLD(
-                        s['z_mu'], s['z_lv'],
-                        torch.zeros_like(s['z_mu']), torch.zeros_like(s['z_lv']))
-                ) + torch.mean(
-                    GaussianKLD(
-                        t['z_mu'], t['z_lv'],
-                        torch.zeros_like(t['z_mu']), torch.zeros_like(t['z_lv']))
-                )
-                loss['KL(z)'] /= 2.0
-
-                loss['Dis'] = torch.mean(
-                    GaussianLogDensity(
-                        x_feature.view(-1, 513),
-                        s['xh'].view(-1, 513),
-                        torch.zeros_like(x_feature.view(-1, 513)))
-                ) + torch.mean(
-                    GaussianLogDensity(
-                        y_feature.view(-1, 513),
-                        t['xh'].view(-1, 513),
-                        torch.zeros_like(y_feature.view(-1, 513)))
-                )
-
-                loss['Dis'] /= - 2.0
-                # print(loss)
-                # print("%.3f\t" % (loss['conv_s2t']))
-
-                optimE.zero_grad()
-                obj_Ez = loss['KL(z)'] + loss['Dis']
-                obj_Ez.backward(retain_graph=True)
-
-                optimG.zero_grad()
-                obj_Gx = loss['Dis']
-                obj_Gx.backward()
-
-                optimE.step()
-                optimG.step()
-                print(
-                    "Epoch:[%d|%d]\tIteration:[%d|%d]\t[D_loss: %.3f\tG_loss: %.3f\tE_loss: %.3f]\t[S2T: %.3f\tKL(z): "
-                    "%.3f\tDis: %.3f]" % (
-                        EPOCH_VAE + epoch + 1, EPOCH_VAWGAN + EPOCH_VAE, index + 1, len(Data),
-                        -0.01 * loss['conv_s2t'], loss['Dis'] + 50 * loss['conv_s2t'], loss['Dis'] + loss['KL(z)'],
-                        loss['conv_s2t'], loss['KL(z)'], loss['Dis']))
-
-                if epoch == EPOCH_VAWGAN - 1 and index == (len(Data) - 2):
+                if epoch == EPOCH_VAE - 1 and index == (len(Data) - 2):
                     print('================= store model ==================')
                     filename = f'./model/model_{self.name}.pt'
                     if not os.path.exists(os.path.dirname(filename)):
@@ -349,9 +213,8 @@ class Trainer:
 
                     torch.save(self, filename)
                     print('=================Finish store model ==================')
-                    gan_loss = obj_Gx
 
-            schedulerD.step()  # should be called after step()
+            # schedulerD.step()  # should be called after step()
             schedulerG.step()  # should be called after step()
             schedulerE.step()  # should be called after step()
 
@@ -391,3 +254,22 @@ def GaussianKLD(mu1, lv1, mu2, lv2):
             (lv2 - lv1) + torch.div(v1 + mu_diff_sq, v2 + EPSILON) - 1.)
 
     return torch.sum(dimwise_kld, 1)
+
+
+from analyzer import divide_into_source_target
+
+if __name__ == '__main__':
+    # {1: 'neutral', 2: 'calm', 3: 'happy', 4: 'sad', 5: 'angry', 6: 'fear', 7: 'disgust', 0: 'surprise'}
+    # 1: 1 --> 3;  2: 1, 2, 3, 4, 6 --> 5
+    source = [1]
+    target = 5
+    source_data, target_data = divide_into_source_target(source, target)
+
+    print("source data: ", source_data.shape)
+    print("target data: ", target_data.shape)
+    print("Device is: ", DEVICE)
+
+    machine = VAE_Trainer(name='VAE_2')
+
+    machine.load_data(source_data, target_data)
+    machine.train()

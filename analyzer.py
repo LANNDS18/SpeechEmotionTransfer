@@ -186,7 +186,7 @@ def map_to_target_path(path, target_id):
     new_file_name = '-'.join(name_parts)
     # Reassemble the file path with the updated file name
     new_path = '/'.join(path_parts[:-1] + [new_file_name])
-    return path
+    return new_path
 
 
 def load_test_data(source: int, target: int, test_train_ratio=0.2):
@@ -208,12 +208,13 @@ def load_test_data(source: int, target: int, test_train_ratio=0.2):
     return test_res
 
 
-def divide_into_source_target(source: list, target: int, trian_test_ratio=0.2):
+def divide_into_source_target(source: list, target: int, train_test_ratio=0.2, statement='01'):
     """
     Divide the data into source and target
     :param source: list of source speaker id
     :param target: target speaker id
-    :param data: list of data
+    :param train_test_ratio:
+    :param statement: '01' or '02' for RAVDESS
     :return: source train data, target data
     """
     target_data = []
@@ -227,16 +228,29 @@ def divide_into_source_target(source: list, target: int, trian_test_ratio=0.2):
     )
 
     feature, label, data = load_complete_feature_embeding()
+    RAVDESS_data = read_RAVDESS_from_dir(data_path='./audio_speech_actors_01-24/')
 
     train_ids = []
     for i in range(len(source)):
-        train_ids.append(get_data_from_(source[i], 'train', trian_test_ratio).index)
+        train_ids.append(get_data_from_(source[i], 'train', train_test_ratio).index)
 
-    target_ids = get_data_from_(target, 'train', trian_test_ratio).index
+    target_ids = get_data_from_(target, 'train', train_test_ratio).index
 
     count = 0
 
     for i in range(len(data)):
+        path = RAVDESS_data.iloc[i]['Path']
+        # Split the file path into components
+        path_parts = path.split('/')
+        # Get the file name (the last part of the path)
+        file_name = path_parts[-1]
+        # Split the file name into sections based on the '-' delimiter
+        name_parts = file_name.split('-')
+
+        if statement:
+            if name_parts[4] != statement:
+                continue
+
         if label[i][0] == target or label[i][0] in source:
             for j in range(len(data[i])):
                 reshaped = data[i][j].reshape(-1, FEAT_DIM)
@@ -247,7 +261,7 @@ def divide_into_source_target(source: list, target: int, trian_test_ratio=0.2):
 
                 emotion_id = reshaped[:, -1].reshape(-1, 1)
                 embedding = reshaped[:, SP_DIM + 1: SP_DIM + 1 + EMOTION_EMBEDDING_DIM].reshape(-1,
-                                                                                                EMOTION_EMBEDDING_DIM)
+                                                                                                EMOTION_EMBEDDING_DIM) * 10
                 f0 = reshaped[:, SP_DIM].reshape(-1, 1)
                 test = np.concatenate((feature, f0, embedding, emotion_id), axis=1)
 
@@ -275,14 +289,14 @@ def divide_into_source_target(source: list, target: int, trian_test_ratio=0.2):
 
 def pw2wav(features, feat_dim=513, fs=16000):
     ''' NOTE: Use `order='C'` to ensure Cython compatibility '''
-    print(type(features['sp']))
-    print(type(features['en']))
+    # print(type(features['sp']))
+    # print(type(features['en']))
     en = np.reshape(features['en'], [-1, 1])
     sp = np.power(10., features['sp'])
     sp = en * sp
     if isinstance(features, dict):
         return pw.synthesize(
-            features['f0'].astype(np.float64).copy(order='C'),
+            features['f0'].squeeze().astype(np.float64).copy(order='C'),
             sp.astype(np.float64).copy(order='C'),
             features['ap'].astype(np.float64).copy(order='C'),
             fs,
@@ -307,7 +321,7 @@ if __name__ == '__main__':
     # extract_and_save()
     unseen = [5, 6]
     seen = [1]
-    # train_source, train_target = divide_into_source_target(seen, 6)
-    # print(train_source.shape)
-    # print(train_target.shape)
-    load_test_data(6, 2)
+    train_source, train_target = divide_into_source_target(seen, 6)
+    print(train_source.shape)
+    print(train_target.shape)
+    # load_test_data(6, 2)

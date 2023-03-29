@@ -111,16 +111,23 @@ def load_embedding():
     return RAVDESS_data, complete_embedding
 
 
-def get_emotion_representation(emotion_id):
+def get_emotion_representation(emotion_id, length=601, num_sample=5):
     RAVDESS_data, complete_embedding = load_embedding()
     emotion_index = RAVDESS_data[RAVDESS_data['Emotion'] == emotion_id].index
     print(len(emotion_index))
     rep = np.zeros((320,))
     count = 0
+    res = np.ndarray(shape=(length, 320))
+    for i in range(length):
+        emb = np.random.choice(emotion_index)
+        res[i] = complete_embedding[emb] * 10
+
     for i, d in enumerate(complete_embedding):
         if i in emotion_index:
             count += 1
             rep += complete_embedding[i]
+        if count == num_sample:
+            break
     rep /= count
     return rep
 
