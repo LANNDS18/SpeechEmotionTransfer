@@ -169,16 +169,7 @@ class VAW_Trainer:
                         obj_Dx.backward(retain_graph=True)
                         optimD.step()
                     else:
-                        # if last epoch, update G as well,
-                        optimG.zero_grad()
-
-                        obj_Gx = 50 * loss['conv_s2t']
-                        obj_Dx = -0.01 * loss['conv_s2t']
-
-                        obj_Gx.backward(retain_graph=True)
-                        obj_Dx.backward(retain_graph=True)
-                        optimG.step()
-                        optimD.step()
+                        break
 
                 # target result
                 t = self.circuit_loop(y_feature, y_f0, y_emb)
@@ -217,9 +208,15 @@ class VAW_Trainer:
                 obj_Ez.backward(retain_graph=True)
 
                 optimG.zero_grad()
-                obj_Gx = loss['Dis']
-                obj_Gx.backward()
+                obj_Gx = loss['Dis'] + 50 * loss['conv_s2t']
+                obj_Gx.backward(retain_graph=True)
 
+                optimD.zero_grad()
+                # if last epoch, update G as well,
+                obj_Dx = -0.01 * loss['conv_s2t']
+                obj_Dx.backward()
+
+                optimD.step()
                 optimE.step()
                 optimG.step()
                 print(
@@ -251,11 +248,11 @@ class VAW_Trainer:
 if __name__ == '__main__':
     from analyzer import divide_into_source_target
 
-    source = [1, 2, 3, 5, 6]
+    source = [1]
     target = 4
     epoch = 2
 
     source_data, target_data = divide_into_source_target(source, target)
-    machine = VAW_Trainer(name='VAW00_from_VAE_2', vae_load_dir='./model/model_VAE_2.pt')
+    machine = VAW_Trainer(name='VAW01_from_VAE_2', vae_load_dir='./model/model_VAE_2.pt')
     machine.load_data(source_data, target_data)
     machine.train(num_epoch=epoch)
