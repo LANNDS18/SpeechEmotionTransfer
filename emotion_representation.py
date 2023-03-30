@@ -3,7 +3,7 @@ import numpy as np
 from torchsummary import summary
 
 from ParallelCNNTrans import ParallelModel
-from preprocess import read_RAVDESS_from_dir, load_signal, getMELspectrogram
+from preprocess_utils import read_RAVDESS_from_dir, load_signal, getMELspectrogram
 
 from sklearn.preprocessing import StandardScaler
 

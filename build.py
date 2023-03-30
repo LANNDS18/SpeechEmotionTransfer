@@ -8,7 +8,7 @@ from analyzer import read_whole_features, extract_and_save
 
 def main():
     try:
-        os.makedirs('./etc')
+        os.makedirs('./bin/etc')
     except OSError as e:
         if e.errno != errno.EEXIST:
             raise
@@ -50,7 +50,7 @@ def main():
         # Save as `float32`
         print('  mu: {}'.format(mu))
         print('  std: {}'.format(std))
-        with open('./etc/{}.npf'.format(s), 'wb') as fp:
+        with open('./bin/etc/{}.npf'.format(s), 'wb') as fp:
             # pass
             fp.write(np.asarray([mu, std]).tostring())
 
@@ -64,11 +64,11 @@ def main():
     print('q995: {}'.format(q995))
 
     # Save as `float32`
-    with open('./etc/{}_xmin.npf'.format('vcc2016'), 'wb') as fp:
+    with open('./bin/etc/{}_xmin.npf'.format('vcc2016'), 'wb') as fp:
         # pass
         fp.write(q005.tostring())
 
-    with open('./etc/{}_xmax.npf'.format('vcc2016'), 'wb') as fp:
+    with open('./bin/etc/{}_xmax.npf'.format('vcc2016'), 'wb') as fp:
         fp.write(q995.tostring())
 
 

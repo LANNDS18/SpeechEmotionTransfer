@@ -21,8 +21,8 @@ def convert_f0(f0, src, trg):
     # print(f0)
 
     # mu and std of log f0 of traininf audio of the speaker
-    mu_s, std_s = np.fromfile(os.path.join('./etc', '{}.npf'.format(src)), np.float32)
-    mu_t, std_t = np.fromfile(os.path.join('./etc', '{}.npf'.format(trg)), np.float32)
+    mu_s, std_s = np.fromfile(os.path.join('./bin/etc', '{}.npf'.format(src)), np.float32)
+    mu_t, std_t = np.fromfile(os.path.join('./bin/etc', '{}.npf'.format(trg)), np.float32)
 
     # if f0>1, element replaced by log(f0)
     # lf0 = np.where(f0 > 1., np.log(f0), f0)
@@ -69,8 +69,8 @@ def convert(model_path: str, src: int, tgt: int):
     corpus_name = 'vcc2016'
 
     normalizer = Tanhize(
-        xmax=np.fromfile('./etc/{}_xmax.npf'.format(corpus_name)),
-        xmin=np.fromfile('./etc/{}_xmin.npf'.format(corpus_name)),
+        xmax=np.fromfile('./bin/etc/{}_xmax.npf'.format(corpus_name)),
+        xmin=np.fromfile('./bin/etc/{}_xmin.npf'.format(corpus_name)),
     )
 
     # test set src

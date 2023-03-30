@@ -6,7 +6,7 @@ import numpy as np
 import pyworld as pw
 
 from emotion_representation import load_embedding
-from preprocess import read_RAVDESS_from_dir
+from preprocess_utils import read_RAVDESS_from_dir
 
 FFT_SIZE = 1024
 SP_DIM = FFT_SIZE // 2 + 1
@@ -222,8 +222,8 @@ def divide_into_source_target(source: list, target: int, train_test_ratio=0.2, s
     corpus_name = 'vcc2016'
 
     normalizer = Tanhize(
-        xmax=np.fromfile('./etc/{}_xmax.npf'.format(corpus_name)),
-        xmin=np.fromfile('./etc/{}_xmin.npf'.format(corpus_name)),
+        xmax=np.fromfile('./bin/etc/{}_xmax.npf'.format(corpus_name)),
+        xmin=np.fromfile('./bin/etc/{}_xmin.npf'.format(corpus_name)),
     )
 
     feature, label, data = load_complete_feature_embeding()
