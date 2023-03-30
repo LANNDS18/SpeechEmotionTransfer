@@ -1,14 +1,14 @@
 import os
-from math import pi
-
+import pickle
 import torch
 import torch.optim as optim
+
 from torch.utils.data import DataLoader
-
+from math import pi
 from VAW_GAN import Encoder, D, G, weights_init
-from VAE_Trainer import VAE_Trainer # must be import
+from VAE_Trainer import VAE_Trainer  # must be import
 
-from util import GaussianKLD, GaussianLogDensity, GaussianSampleLayer, reconst_loss, ConcatDataset
+from util import GaussianKLD, GaussianLogDensity, GaussianSampleLayer, reconst_loss, ConcatDataset,validate_log_dirs
 
 LR = 1e-4
 
@@ -26,7 +26,7 @@ PI = torch.tensor([pi], requires_grad=False).to(DEVICE)
 
 class VAW_Trainer:
 
-    def __init__(self, name, vae_load_dir=None):
+    def __init__(self, name, vae_load_dir):
 
         self.G = G().to(device=DEVICE)
         self.G.apply(weights_init)
@@ -39,7 +39,12 @@ class VAW_Trainer:
         self.target = None
         self.name = name
         torch.autograd.set_detect_anomaly(True)
-        self.VAE_load_dir = vae_load_dir if vae_load_dir else None
+        self.VAE_load_dir = vae_load_dir
+        if not vae_load_dir:
+            print("To train pure VAW-GAN, the pre-trained VAE dir must be specified")
+            exit(999)
+        self.dirs = validate_log_dirs(self.name)['logdir']
+        os.makedirs(self.dirs)
 
     def load_data(self, x, y):
         self.source = x
@@ -71,10 +76,12 @@ class VAW_Trainer:
 
     def train(self, num_epoch=20):
 
-        if self.VAE_load_dir:
-            model = torch.load(self.VAE_load_dir)
-            self.D = model.D
-            self.G = model.G
+        print(f"Num of Epochs = {num_epoch}")
+
+        model_type = VAE_Trainer
+        model = torch.load(self.VAE_load_dir, map_location=DEVICE)
+        self.D = model.D
+        self.G = model.G
 
         gan_loss = 50000
         x_feature = torch.FloatTensor(self.batch_size, 1, FEATURE_DIM, 1).to(device=DEVICE)
@@ -100,6 +107,14 @@ class VAW_Trainer:
             batch_size=self.batch_size, shuffle=True, num_workers=1)
 
         for epoch in range(num_epoch):
+
+            # initialize empty lists to store the losses
+            conv_s2t_loss = []
+            KL_z_loss = []
+            Dis_loss = []
+            d_loss = []
+            g_loss = []
+            e_loss = []
 
             for index, (s_data, t_data) in enumerate(Data):
 
@@ -172,7 +187,7 @@ class VAW_Trainer:
                         break
 
                 # target result
-                t = self.circuit_loop(y_feature, y_f0, y_emb)
+                # t = self.circuit_loop(y_feature, y_f0, y_emb)
                 # Source result
                 s = self.circuit_loop(x_feature, x_f0, x_emb)
 
@@ -216,9 +231,17 @@ class VAW_Trainer:
                 obj_Dx = -0.01 * loss['conv_s2t']
                 obj_Dx.backward()
 
-                optimD.step()
                 optimE.step()
                 optimG.step()
+                optimD.step()
+
+                conv_s2t_loss.append([loss['conv_s2t']])
+                KL_z_loss.append([loss['KL(z)']])
+                Dis_loss.append([loss['Dis']])
+                d_loss.append([-0.01 * loss['conv_s2t']])
+                g_loss.append([loss['Dis'] + 50 * loss['conv_s2t']])
+                e_loss.append(loss['Dis'] + loss['KL(z)'])
+
                 print(
                     "Epoch:[%d|%d]\tIteration:[%d|%d]\t[D_loss: %.3f\tG_loss: %.3f\tE_loss: %.3f]\t[S2T: %.3f\tKL(z): "
                     "%.3f\tDis: %.3f]" % (epoch + 1, num_epoch, index + 1, len(Data),
@@ -240,6 +263,10 @@ class VAW_Trainer:
                     print('=================Finish store model ==================')
                     gan_loss = obj_Gx
 
+            # save the three loss lists to a local storage using pickle
+            with open(f'./{self.dirs}/model_{self.name}_epoch{epoch}.pkl', 'wb') as f:
+                pickle.dump((conv_s2t_loss, KL_z_loss, Dis_loss, d_loss, g_loss, e_loss), f)
+
             schedulerD.step()  # should be called after step()
             schedulerG.step()  # should be called after step()
             schedulerE.step()  # should be called after step()
@@ -249,10 +276,10 @@ if __name__ == '__main__':
     from analyzer import divide_into_source_target
 
     source = [1]
-    target = 4
-    epoch = 2
+    target = 5
+    epoch = 15
 
     source_data, target_data = divide_into_source_target(source, target)
-    machine = VAW_Trainer(name='VAW01_from_VAE_2', vae_load_dir='./model/model_VAE_2.pt')
+    machine = VAW_Trainer(name='VAW_VAE_1_to_5', vae_load_dir='./model/model_VAE_1_to_5.pt')
     machine.load_data(source_data, target_data)
     machine.train(num_epoch=epoch)
