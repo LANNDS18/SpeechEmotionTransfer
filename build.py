@@ -36,12 +36,12 @@ def main():
     emotion_all = np.concatenate(emotion_all, axis=0)
     embedding_all = np.concatenate(embedding_all, axis=0)
 
-    SPEAKERS = [0, 1, 2, 3, 4, 5, 6, 7]
+    EMOTION = [0, 1, 2, 3, 4, 5, 6, 7]
 
     # ==== F0 stats ====
-    for s in SPEAKERS:
+    for s in EMOTION:
         print('Emotion {}'.format(s), flush=True)
-        f0 = f0_all[SPEAKERS.index(s) == emotion_all]
+        f0 = f0_all[EMOTION.index(s) == emotion_all]
         print('  len: {}'.format(len(f0)))
         f0 = f0[f0 > 2.]
         f0 = np.log(f0)

@@ -34,7 +34,6 @@ def wav2pw(x, fs=16000, fft_size=FFT_SIZE):
         'ap': ap,
     }
 
-
 def list_full_filenames(path):
     ''' return a generator of full filenames '''
     return (
@@ -288,7 +287,7 @@ def divide_into_source_target(source: list, target: int, train_test_ratio=0.2, s
 
 
 def pw2wav(features, feat_dim=513, fs=16000):
-    ''' NOTE: Use `order='C'` to ensure Cython compatibility '''
+    """ NOTE: Use `order='C'` to ensure Cython compatibility """
     # print(type(features['sp']))
     # print(type(features['en']))
     en = np.reshape(features['en'], [-1, 1])

@@ -1,13 +1,13 @@
 import os
 from math import pi
+import torch
 import torch.optim as optim
 from torch.utils.data import DataLoader
-
-from VAW_GAN import *
+from VAW_GAN import D, Encoder, G, weights_init
 
 LR = 1e-4
-EPOCH_VAE = 8
-EPOCH_VAWGAN = 20
+EPOCH_VAE = 10
+EPOCH_VAWGAN = 15
 
 FEATURE_DIM = 513 + 1 + 320 + 1
 SP_DIM = 513

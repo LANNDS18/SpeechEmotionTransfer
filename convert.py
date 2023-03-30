@@ -1,4 +1,3 @@
-import argparse
 import os
 from datetime import datetime
 from pathlib import Path
@@ -11,6 +10,7 @@ from analyzer import Tanhize, pw2wav, load_test_data, SP_DIM
 from emotion_representation import get_emotion_representation
 from trainer import DEVICE
 from VAE_Trainer import VAE_Trainer
+from VAW_Trainer import VAW_Trainer
 
 
 def nh_to_nchw(x):

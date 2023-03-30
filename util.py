@@ -27,13 +27,11 @@ def get_default_logdir(logdir_root):
     return logdir
 
 
-def validate_log_dirs():
+def validate_log_dirs(name=None):
     """ Create a default log dir (if necessary) """
-
+    STARTED_DATESTRING = datetime.now().strftime('%0m%0d-%0H%0M-%0S-%Y')
     logdir_root = 'logdir'
-
-    logdir = get_default_logdir(logdir_root)
-
+    logdir = os.path.join(logdir_root, name+'_'+STARTED_DATESTRING)
     restore_from = logdir
 
     return {
