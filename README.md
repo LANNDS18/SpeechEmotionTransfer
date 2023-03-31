@@ -1,4 +1,4 @@
-# Speech-Emotion-Conversion-with-PyTorch
+# Speech-Emotion-Conversion-with-PyTorch (MLP G007)
 
 #### Abstract: This project intends to develop a high-quality many-to-many emotion conversion model that can convert a speech audio into specified emotions. To achieve this goal, we use pretrained parallel CNN-transformers model with high speech  emotion recognition accuracy to extract emotion embeddings
 
