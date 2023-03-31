@@ -44,10 +44,6 @@ Install by `pip install -r requirements.txt`
 ├── requirements.txt
 ├── trainer.py
 └── util.py
-
-
-
-
 ```
 
 ### Stage I: Speech Emotion Recognition
