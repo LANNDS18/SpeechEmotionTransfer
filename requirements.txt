@@ -1,0 +1,6 @@
+librosa~=0.9.2
+pandas~=1.5.3
+numpy~=1.23.2
+torchinfo~=1.7.2
+pyworld~=0.3.2
+scikit-learn~=1.2.1
