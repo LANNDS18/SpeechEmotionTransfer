@@ -96,4 +96,7 @@ def compute_MCD(src: int, tgt_emo: int, synth_folder: str):
 
 
 if __name__ == '__main__':
-    compute_MCD(1, 5, "./converted/model_VAE_1/1_to_5")
+    # compute_MCD(1, 5, './converted/model_VAE_2/1_to_5')
+    # compute_MCD(1, 5, './converted/model_VAW_1t5_200_convs2t/1_to_5')
+    # compute_MCD(1, 4, './converted/model_VAE_2/1_to_5')
+    compute_MCD(1, 5, './converted/model_VAW_01/1_to_4')

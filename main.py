@@ -111,18 +111,20 @@ def Third_Round():
     Trainer.D = model1.D
     machine.train()
 
+
+def all_t_4():
     f2 = './model/model_VAW_01.pt'
     model2 = torch.load(f2)
     source = [1, 2, 3, 5, 6]
     target = 4
     source_data, target_data = divide_into_source_target(source, target)
-    machine = Trainer(name='VAW_02')
+    machine = Trainer(name='VAW_All_to_4')
     machine.load_data(source_data, target_data)
     Trainer.G = model2.G
-    Trainer.Encoder = model1.Encoder
+    Trainer.Encoder = model2.Encoder
     Trainer.D = model2.D
     machine.train()
 
 
 if __name__ == '__main__':
-    Third_Round()
+    all_t_4()

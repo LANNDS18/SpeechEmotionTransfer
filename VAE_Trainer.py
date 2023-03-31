@@ -139,7 +139,7 @@ class VAE_Trainer:
 
                 loss = dict()
                 loss['conv_s2t'] = reconst_loss(t['x_logit'], s2t['xh_logit'])
-                # loss['conv_s2t'] *= 100 #?
+                loss['conv_s2t'] *= 100 #?
 
                 loss['KL(z)'] = torch.mean(
                     GaussianKLD(

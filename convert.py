@@ -155,4 +155,4 @@ def convert(model_path: str, src: int, tgt: int):
 
 
 if __name__ == '__main__':
-    convert("./model/model_VAW_00.pt", 2, 5)
+    convert("./model/model_VAW_01.pt", 1, 5)

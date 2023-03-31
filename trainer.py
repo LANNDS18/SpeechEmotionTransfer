@@ -1,13 +1,16 @@
 import os
-from math import pi
+import pickle
 import torch
 import torch.optim as optim
 from torch.utils.data import DataLoader
+
+from math import pi
 from VAW_GAN import D, Encoder, G, weights_init
+from util import ConcatDataset, GaussianSampleLayer, reconst_loss, validate_log_dirs
 
 LR = 1e-4
 EPOCH_VAE = 10
-EPOCH_VAWGAN = 15
+EPOCH_VAWGAN = 30
 
 FEATURE_DIM = 513 + 1 + 320 + 1
 SP_DIM = 513
@@ -19,17 +22,6 @@ DEVICE = torch.device('mps') if torch.has_mps else torch.device('cpu')
 
 EPSILON = torch.tensor([1e-6], requires_grad=False).to(DEVICE)
 PI = torch.tensor([pi], requires_grad=False).to(DEVICE)
-
-
-class ConcatDataset(torch.utils.data.Dataset):
-    def __init__(self, *datasets):
-        self.datasets = datasets
-
-    def __getitem__(self, i):
-        return tuple(d[i] for d in self.datasets)
-
-    def __len__(self):
-        return min(len(d) for d in self.datasets)
 
 
 class Trainer:
@@ -46,6 +38,18 @@ class Trainer:
         self.source = None
         self.target = None
         self.name = name
+
+        dirs = validate_log_dirs(self.name)['logdir']
+        os.makedirs(dirs)
+
+        vae_dir = os.path.join(dirs, 'VAE')
+        vaw_dir = os.path.join(dirs, 'VAW')
+        os.makedirs(vae_dir)
+        os.makedirs(vaw_dir)
+
+        self.vae_dir = vae_dir
+        self.vaw_dir = vaw_dir
+
         torch.autograd.set_detect_anomaly(True)
 
     def load_data(self, x, y):
@@ -60,16 +64,8 @@ class Trainer:
 
         concat = torch.cat((z, f0, emb), 1)
 
-        xh, xh_sig_logit = self.G(concat)  # [256,128] #[256,1]
-        xh_logit, xh_feature = self.D(xh)  # xh_logit[256,1]
-
-        """
-        print("feature_shape: ", feature.shape)
-        print("f0_shape: ", f0.shape)
-        print("emb_shape: ", emb.shape)
-        print("x_feature: ", x_feature.shape)
-        print("z_shape: ", z.shape)
-        """
+        xh, xh_sig_logit = self.G(concat)
+        xh_logit, xh_feature = self.D(xh)
 
         return dict(
             z=z,
@@ -84,7 +80,7 @@ class Trainer:
 
         )
 
-    def train(self, device='cpu'):
+    def train(self):
 
         gan_loss = 50000
         x_feature = torch.FloatTensor(self.batch_size, 1, FEATURE_DIM, 1).to(device=DEVICE)  # .cuda()  # NHWC
@@ -96,18 +92,6 @@ class Trainer:
         x_emb = torch.FloatTensor(self.batch_size, EMBED_DIM).to(device=DEVICE)  # .cuda()  # NHWC
         y_f0 = torch.FloatTensor(self.batch_size, F0_DIM).to(device=DEVICE)  # .cuda()  # NHWC
         y_emb = torch.FloatTensor(self.batch_size, EMBED_DIM).to(device=DEVICE)  # .cuda()  # NHWC
-
-        """
-        x_feature = torch.tensor(x_feature)
-        x_label = torch.tensor(x_label, requires_grad=False)
-        y_feature = torch.tensor(y_feature)
-        y_label = torch.tensor(y_label, requires_grad=False)
-
-        x_f0 = torch.tensor(x_f0, requires_grad=False)
-        x_emb = torch.tensor(x_emb, requires_grad=False)
-        y_f0 = torch.tensor(y_f0, requires_grad=False)
-        y_emb = torch.tensor(y_emb, requires_grad=False)
-        """
 
         optimD = optim.RMSprop([{'params': self.D.parameters()}], lr=LR)
         optimG = optim.RMSprop([{'params': self.G.parameters()}], lr=LR)
@@ -121,13 +105,13 @@ class Trainer:
             ConcatDataset(self.source, self.target),
             batch_size=self.batch_size, shuffle=True, num_workers=1)
 
-        # print('N H W C')
-
         for epoch in range(EPOCH_VAE):
 
-            # schedulerD.step()
-            # schedulerG.step()
-            # schedulerE.step()
+            # initialize empty lists to store the losses
+            conv_s2t_loss = []
+            KL_z_loss = []
+            Dis_loss = []
+
             for index, (s_data, t_data) in enumerate(Data):
                 # Source
                 feature_1 = s_data[:, :513, :, :].permute(0, 3, 1, 2)  # NHWC ==> NCHW
@@ -203,11 +187,44 @@ class Trainer:
                 optimE.step()
                 optimG.step()
 
+                # update the three losses
+                conv_s2t_loss.append(loss['conv_s2t'])
+                KL_z_loss.append(loss['KL(z)'])
+                Dis_loss.append(loss['Dis'])
+
                 print("Epoch:[%d|%d]\tIteration:[%d|%d]\tW: %.3f\tKL(Z): %.3f\tDis: %.3f" % (
                     epoch + 1, EPOCH_VAWGAN + EPOCH_VAE, index + 1, len(Data),
                     loss['conv_s2t'], loss['KL(z)'], loss['Dis']))
 
+                if epoch == EPOCH_VAE - 1 and index == (len(Data) - 2):
+                    print('================= store model ==================')
+                    filename = f'./model/model_{self.name}/VAE.pt'
+                    if not os.path.exists(os.path.dirname(filename)):
+                        try:
+                            os.makedirs(os.path.dirname(filename))
+                        except OSError as exc:  # Guard against race condition
+                            print('error')
+                            pass
+
+                    torch.save(self, filename)
+                    print('=================Finish store model ==================')
+
+            # save the three loss lists to a local storage using pickle
+            with open(f'./{self.vae_dir}/model_{self.name}_epoch{epoch}.pkl', 'wb') as f:
+                pickle.dump((conv_s2t_loss, KL_z_loss, Dis_loss), f)
+
+            schedulerG.step()  # should be called after step()
+            schedulerE.step()  # should be called after step()
+
         for epoch in range(EPOCH_VAWGAN):
+
+            # initialize empty lists to store the losses
+            conv_s2t_loss = []
+            KL_z_loss = []
+            Dis_loss = []
+            d_loss = []
+            g_loss = []
+            e_loss = []
 
             for index, (s_data, t_data) in enumerate(Data):
 
@@ -277,19 +294,10 @@ class Trainer:
                         obj_Dx.backward(retain_graph=True)
                         optimD.step()
                     else:
-                        # if last epoch, update G as well,
-                        optimG.zero_grad()
-
-                        obj_Gx = 50 * loss['conv_s2t']
-                        obj_Dx = -0.01 * loss['conv_s2t']
-
-                        obj_Gx.backward(retain_graph=True)
-                        obj_Dx.backward(retain_graph=True)
-                        optimG.step()
-                        optimD.step()
+                        break
 
                 # target result
-                t = self.circuit_loop(y_feature, y_f0, y_emb)
+                # t = self.circuit_loop(y_feature, y_f0, y_emb)
                 # Source result
                 s = self.circuit_loop(x_feature, x_f0, x_emb)
 
@@ -325,11 +333,25 @@ class Trainer:
                 obj_Ez.backward(retain_graph=True)
 
                 optimG.zero_grad()
-                obj_Gx = loss['Dis']
-                obj_Gx.backward()
+                obj_Gx = loss['Dis'] + 50 * loss['conv_s2t']
+                obj_Gx.backward(retain_graph=True)
+
+                optimD.zero_grad()
+                # if last epoch, update G as well,
+                obj_Dx = -0.01 * loss['conv_s2t']
+                obj_Dx.backward()
 
                 optimE.step()
                 optimG.step()
+                optimD.step()
+
+                conv_s2t_loss.append([loss['conv_s2t']])
+                KL_z_loss.append([loss['KL(z)']])
+                Dis_loss.append([loss['Dis']])
+                d_loss.append([-0.01 * loss['conv_s2t']])
+                g_loss.append([loss['Dis'] + 50 * loss['conv_s2t']])
+                e_loss.append(loss['Dis'] + loss['KL(z)'])
+
                 print(
                     "Epoch:[%d|%d]\tIteration:[%d|%d]\t[D_loss: %.3f\tG_loss: %.3f\tE_loss: %.3f]\t[S2T: %.3f\tKL(z): "
                     "%.3f\tDis: %.3f]" % (
@@ -339,7 +361,7 @@ class Trainer:
 
                 if epoch == EPOCH_VAWGAN - 1 and index == (len(Data) - 2):
                     print('================= store model ==================')
-                    filename = f'./model/model_{self.name}.pt'
+                    filename = f'./model/model_{self.name}/vaw.pt'
                     if not os.path.exists(os.path.dirname(filename)):
                         try:
                             os.makedirs(os.path.dirname(filename))
@@ -351,19 +373,13 @@ class Trainer:
                     print('=================Finish store model ==================')
                     gan_loss = obj_Gx
 
+            # save the three loss lists to a local storage using pickle
+            with open(f'./{self.vaw_dir}/model_{self.name}_epoch{epoch}.pkl', 'wb') as f:
+                pickle.dump((conv_s2t_loss, KL_z_loss, Dis_loss, d_loss, g_loss, e_loss), f)
+
             schedulerD.step()  # should be called after step()
             schedulerG.step()  # should be called after step()
             schedulerE.step()  # should be called after step()
-
-
-def reconst_loss(x, xh):
-    return torch.mean(x) - torch.mean(xh)
-
-
-def GaussianSampleLayer(z_mu, z_lv):
-    std = torch.sqrt(torch.exp(z_lv))
-    eps = torch.randn_like(std)
-    return eps.mul(std).add_(z_mu)
 
 
 def GaussianLogDensity(x, mu, log_var):

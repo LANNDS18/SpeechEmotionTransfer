@@ -8,7 +8,7 @@ from math import pi
 from VAW_GAN import Encoder, D, G, weights_init
 from VAE_Trainer import VAE_Trainer  # must be import
 
-from util import GaussianKLD, GaussianLogDensity, GaussianSampleLayer, reconst_loss, ConcatDataset,validate_log_dirs
+from util import GaussianKLD, GaussianLogDensity, GaussianSampleLayer, reconst_loss, ConcatDataset, validate_log_dirs
 
 LR = 1e-4
 
@@ -112,9 +112,6 @@ class VAW_Trainer:
             conv_s2t_loss = []
             KL_z_loss = []
             Dis_loss = []
-            d_loss = []
-            g_loss = []
-            e_loss = []
 
             for index, (s_data, t_data) in enumerate(Data):
 
@@ -223,7 +220,7 @@ class VAW_Trainer:
                 obj_Ez.backward(retain_graph=True)
 
                 optimG.zero_grad()
-                obj_Gx = loss['Dis'] + 50 * loss['conv_s2t']
+                obj_Gx = loss['Dis'] + 200 * loss['conv_s2t']
                 obj_Gx.backward(retain_graph=True)
 
                 optimD.zero_grad()
@@ -238,9 +235,6 @@ class VAW_Trainer:
                 conv_s2t_loss.append([loss['conv_s2t']])
                 KL_z_loss.append([loss['KL(z)']])
                 Dis_loss.append([loss['Dis']])
-                d_loss.append([-0.01 * loss['conv_s2t']])
-                g_loss.append([loss['Dis'] + 50 * loss['conv_s2t']])
-                e_loss.append(loss['Dis'] + loss['KL(z)'])
 
                 print(
                     "Epoch:[%d|%d]\tIteration:[%d|%d]\t[D_loss: %.3f\tG_loss: %.3f\tE_loss: %.3f]\t[S2T: %.3f\tKL(z): "
@@ -265,7 +259,7 @@ class VAW_Trainer:
 
             # save the three loss lists to a local storage using pickle
             with open(f'./{self.dirs}/model_{self.name}_epoch{epoch}.pkl', 'wb') as f:
-                pickle.dump((conv_s2t_loss, KL_z_loss, Dis_loss, d_loss, g_loss, e_loss), f)
+                pickle.dump((conv_s2t_loss, KL_z_loss, Dis_loss), f)
 
             schedulerD.step()  # should be called after step()
             schedulerG.step()  # should be called after step()
@@ -275,11 +269,13 @@ class VAW_Trainer:
 if __name__ == '__main__':
     from analyzer import divide_into_source_target
 
+    # source = [1, 2, 3, 5]
+    # target = 4
     source = [1]
-    target = 5
+    target = 4
     epoch = 15
 
     source_data, target_data = divide_into_source_target(source, target)
-    machine = VAW_Trainer(name='VAW_VAE_1_to_5', vae_load_dir='./model/model_VAE_1_to_5.pt')
+    machine = VAW_Trainer(name='VAW_1t5_200_convs2t', vae_load_dir='./model/model_VAE_2.pt')
     machine.load_data(source_data, target_data)
     machine.train(num_epoch=epoch)

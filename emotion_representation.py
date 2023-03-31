@@ -102,7 +102,22 @@ def generate_from_all():
         X_tensor = torch.tensor(X, device=device).float()
         output_logits, output_softmax, complete_embedding = model(X_tensor)
     # save the embedding
-    np.save('./bin/models/RAVDESS_complete_embedding.npy', complete_embedding.cpu().numpy())
+    np.save('./bin/models/RAVDESS_complete_embedding222.npy', complete_embedding.cpu().numpy())
+
+import os
+def save_model():
+
+    data, X, Y = load_and_split_representation_dataset()
+    device = 'cpu' if torch.has_mps else 'cpu'
+    model = ParallelModel(len(EMOTION)).to(device)
+    model.load_state_dict(torch.load('./bin/models/cnn_transf_parallel_model.pt', map_location=device))
+    summary(model)
+    with torch.no_grad():
+        X_tensor = torch.tensor(X, device=device).float()
+        output_logits, output_softmax, complete_embedding = model(X_tensor)
+
+    torch.save(model.state_dict(), './bin/models/cnn_transf_parallel_model.pt')
+    print('Model is saved to {}'.format(os.path.join('./bin/models/cnn_transf_parallel_model.pt')))
 
 
 def load_embedding():
@@ -133,9 +148,13 @@ def get_emotion_representation(emotion_id, length=601, num_sample=5):
 
 
 if __name__ == '__main__':
+    save_model()
+    # generate_from_all()
+    """
     RAVDESS_data, complete_embedding = load_embedding()
     print(RAVDESS_data.shape)
     print(complete_embedding.shape)
     print(RAVDESS_data['Emotion'].value_counts())
     print(RAVDESS_data.head())
     get_emotion_representation(5)
+    """
