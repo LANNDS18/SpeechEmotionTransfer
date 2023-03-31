@@ -62,7 +62,7 @@ To train VAE, we can call `VAE_Trainer.py`,the training status will be logged in
 
 Some of our visualization script is showed in the `./notebook/visualization.ipynb`, be catious about the type of logging data, please use `def process()` to process the loading data.
 
-### Stage III: Audio Generator:
+### Stage III: Audio Generation:
 
 Call `Convert.py`, specify the path for loading weight and the source and target, the generated audio will be saved in `./converted/`.
 
